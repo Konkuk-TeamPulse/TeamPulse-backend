@@ -1,0 +1,443 @@
+package com.teampulse.backend.mobile.application.service;
+
+
+import com.teampulse.backend.mobile.application.WorkspaceService;
+import com.teampulse.backend.mobile.dto.*;
+import com.teampulse.backend.domain.task.TaskStatus;
+import com.teampulse.backend.domain.team.TeamRole;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.atomic.AtomicLong;
+import org.springframework.context.annotation.Profile;
+import org.springframework.stereotype.Service;
+
+@Service
+@Profile("demo")
+public class InMemoryWorkspaceService implements WorkspaceService {
+
+    private static final DateTimeFormatter TIMESTAMP_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+    private final AtomicLong ids = new AtomicLong(1000);
+    private final RiskEngine riskEngine;
+    private WorkspaceState workspace = emptyWorkspace();
+
+    public InMemoryWorkspaceService(RiskEngine riskEngine) {
+        this.riskEngine = riskEngine;
+    }
+
+    public synchronized WorkspaceState getWorkspace() {
+        return workspace;
+    }
+
+    public synchronized WorkspaceState reset() {
+        workspace = emptyWorkspace();
+        return workspace;
+    }
+
+    public synchronized WorkspaceState bootstrap(BootstrapWorkspaceRequest request) {
+        requireText(request.name(), "Name is required.");
+        requireText(request.email(), "Email is required.");
+        requireText(request.teamName(), "Team name is required.");
+        requireText(request.courseName(), "Course name is required.");
+        requireText(request.dueDate(), "Due date is required.");
+        validateLocalDate(request.dueDate(), "Due date must use a real yyyy-MM-dd date.");
+
+        var leader = new MemberView(nextId(), request.name().trim(), TeamRole.LEADER);
+        var members = new ArrayList<>(List.of(leader));
+        var activities = new ArrayList<>(List.of(activity(request.name().trim(), request.teamName().trim() + " workspace started.")));
+
+        workspace = new WorkspaceState(
+                true,
+                new UserProfile(request.name().trim(), request.email().trim()),
+                new TeamProfile(
+                        request.teamName().trim(),
+                        request.courseName().trim(),
+                        defaultText(request.semester(), "2026-1"),
+                        request.dueDate().trim(),
+                        inviteCode()),
+                members,
+                new ArrayList<>(),
+                new ArrayList<>(),
+                activities,
+                new ArrayList<>(),
+                new ArrayList<>());
+
+        return recompute();
+    }
+
+    public synchronized WorkspaceState loadSample() {
+        var leader = new MemberView(nextId(), "Kim", TeamRole.LEADER);
+        var member = new MemberView(nextId(), "Min", TeamRole.MEMBER);
+        var user = new UserProfile("Kim", "leader@teampulse.app");
+        var team = new TeamProfile("TeamPulse", "AI Coding Tool", "2026-1", "2026-04-12", inviteCode());
+
+        var tasks = new ArrayList<>(List.of(
+                task("Read AI coding tool guide", "Kim", "2026-04-08", List.of(), TaskStatus.DOING),
+                task("Build mobile-first UI", "Min", "2026-04-09", List.of("Read AI coding tool guide"), TaskStatus.TODO),
+                task("Prepare weekly report", "Kim", "2026-04-10", List.of(), TaskStatus.DONE)));
+
+        var meetings = new ArrayList<>(List.of(
+                new MeetingView(nextId(), "Week 6 planning", "2026-04-07T19:00", "Finalize task split and report scope.", List.of("Use TeamPulse as assignment app."), List.of("Wire frontend to backend"))));
+
+        var activities = new ArrayList<>(List.of(
+                activity("System", "Sample workspace loaded."),
+                activity("Kim", "Week 6 planning meeting saved."),
+                activity("Kim", "Read AI coding tool guide task completed.")));
+
+        workspace = new WorkspaceState(
+                true,
+                user,
+                team,
+                new ArrayList<>(List.of(leader, member)),
+                tasks,
+                meetings,
+                activities,
+                new ArrayList<>(),
+                new ArrayList<>());
+
+        return recompute();
+    }
+
+    public synchronized WorkspaceState createTask(CreateTaskRequest request) {
+        ensureInitialized();
+        requireText(request.title(), "Task title is required.");
+        requireText(request.owner(), "Task owner is required.");
+        requireText(request.dueDate(), "Task due date is required.");
+        validateLocalDate(request.dueDate(), "Task due date must use a real yyyy-MM-dd date.");
+        requireExistingMember(request.owner(), "Task owner must be an existing team member.");
+
+        var tasks = new ArrayList<>(workspace.tasks());
+        tasks.add(0, task(request.title().trim(), request.owner().trim(), request.dueDate().trim(), safeList(request.blockers()), TaskStatus.TODO));
+
+        var activities = prependActivity(workspace.activities(), activity(workspace.user().name(), request.title().trim() + " created."));
+        workspace = copy(workspace, tasks, workspace.meetings(), activities, workspace.reports(), workspace.members(), workspace.team());
+        return recompute();
+    }
+
+    public synchronized WorkspaceState updateTaskStatus(long taskId, UpdateTaskStatusRequest request) {
+        ensureInitialized();
+        if (request.status() == null) {
+            throw new IllegalArgumentException("Task status is required.");
+        }
+
+        var tasks = new ArrayList<TaskView>();
+        TaskView target = null;
+        for (var task : workspace.tasks()) {
+            if (task.id() == taskId) {
+                target = new TaskView(task.id(), task.title(), task.owner(), request.status(), task.dueDate(), task.priority(), task.blockers(), task.next(), task.note());
+                tasks.add(target);
+            } else {
+                tasks.add(task);
+            }
+        }
+
+        if (target == null) {
+            throw new IllegalArgumentException("Task not found.");
+        }
+
+        var activities = prependActivity(workspace.activities(), activity(workspace.user().name(), target.title() + " moved to " + request.status() + "."));
+        workspace = copy(workspace, tasks, workspace.meetings(), activities, workspace.reports(), workspace.members(), workspace.team());
+        return recompute();
+    }
+
+    public synchronized WorkspaceState deleteTask(long taskId) {
+        ensureInitialized();
+        var tasks = new ArrayList<>(workspace.tasks());
+        var removed = tasks.removeIf(task -> task.id() == taskId);
+        if (!removed) {
+            throw new IllegalArgumentException("Task not found.");
+        }
+
+        var activities = prependActivity(workspace.activities(), activity(workspace.user().name(), "Task deleted."));
+        workspace = copy(workspace, tasks, workspace.meetings(), activities, workspace.reports(), workspace.members(), workspace.team());
+        return recompute();
+    }
+
+    public synchronized WorkspaceState createMeeting(CreateMeetingRequest request) {
+        ensureInitialized();
+        requireText(request.title(), "Meeting title is required.");
+        requireText(request.time(), "Meeting time is required.");
+        requireText(request.agenda(), "Meeting agenda is required.");
+        validateMeetingTime(request.time(), "Meeting time must use a real yyyy-MM-dd or yyyy-MM-ddTHH:mm value.");
+
+        var meeting = new MeetingView(
+                nextId(),
+                request.title().trim(),
+                request.time().trim(),
+                request.agenda().trim(),
+                safeList(request.decisions()),
+                safeList(request.actions()));
+
+        var meetings = new ArrayList<>(workspace.meetings());
+        meetings.add(0, meeting);
+
+        var tasks = new ArrayList<>(workspace.tasks());
+        if (request.createTasks()) {
+            var actionOwner = defaultText(request.actionOwner(), firstMemberName());
+            requireExistingMember(actionOwner, "Action owner must be an existing team member.");
+            for (var action : safeList(request.actions())) {
+                tasks.add(0, task(action, actionOwner, plusDays(request.time(), 7), List.of(), TaskStatus.TODO));
+            }
+        }
+
+        var activities = prependActivity(workspace.activities(), activity(workspace.user().name(), meeting.title() + " meeting saved."));
+        workspace = copy(workspace, tasks, meetings, activities, workspace.reports(), workspace.members(), workspace.team());
+        return recompute();
+    }
+
+    public synchronized WorkspaceState generateReport() {
+        ensureInitialized();
+        var reports = new ArrayList<>(workspace.reports());
+        reports.add(0, report());
+        var activities = prependActivity(workspace.activities(), activity(workspace.user().name(), "Report draft refreshed."));
+        workspace = copy(workspace, workspace.tasks(), workspace.meetings(), activities, reports, workspace.members(), workspace.team());
+        return recompute();
+    }
+
+    public synchronized WorkspaceState updateTeam(UpdateTeamRequest request) {
+        ensureInitialized();
+        requireText(request.name(), "Team name is required.");
+        requireText(request.courseName(), "Course name is required.");
+        requireText(request.dueDate(), "Team due date is required.");
+        validateLocalDate(request.dueDate(), "Team due date must use a real yyyy-MM-dd date.");
+
+        var team = new TeamProfile(
+                request.name().trim(),
+                request.courseName().trim(),
+                defaultText(request.semester(), workspace.team().semester()),
+                request.dueDate().trim(),
+                workspace.team().inviteCode());
+
+        var activities = prependActivity(workspace.activities(), activity(workspace.user().name(), "Team profile updated."));
+        workspace = copy(workspace, workspace.tasks(), workspace.meetings(), activities, workspace.reports(), workspace.members(), team);
+        return recompute();
+    }
+
+    public synchronized WorkspaceState regenerateInviteCode() {
+        ensureInitialized();
+        var team = new TeamProfile(
+                workspace.team().name(),
+                workspace.team().courseName(),
+                workspace.team().semester(),
+                workspace.team().dueDate(),
+                inviteCode());
+
+        var activities = prependActivity(workspace.activities(), activity(workspace.user().name(), "Invite code regenerated."));
+        workspace = copy(workspace, workspace.tasks(), workspace.meetings(), activities, workspace.reports(), workspace.members(), team);
+        return recompute();
+    }
+
+    public synchronized WorkspaceState addMember(CreateMemberRequest request) {
+        ensureInitialized();
+        requireText(request.name(), "Member name is required.");
+
+        var normalizedName = request.name().trim();
+        var duplicate = workspace.members().stream().anyMatch(member -> member.name().equalsIgnoreCase(normalizedName));
+        if (duplicate) {
+            throw new IllegalArgumentException("Member already exists.");
+        }
+
+        var members = new ArrayList<>(workspace.members());
+        members.add(new MemberView(nextId(), normalizedName, request.role() == null ? TeamRole.MEMBER : request.role()));
+
+        var activities = prependActivity(workspace.activities(), activity(workspace.user().name(), normalizedName + " added to team."));
+        workspace = copy(workspace, workspace.tasks(), workspace.meetings(), activities, workspace.reports(), members, workspace.team());
+        return recompute();
+    }
+
+    public synchronized WorkspaceState deleteMember(long memberId) {
+        ensureInitialized();
+        if (workspace.members().size() == 1) {
+            throw new IllegalArgumentException("At least one member must remain.");
+        }
+
+        MemberView target = null;
+        for (var member : workspace.members()) {
+            if (member.id() == memberId) {
+                target = member;
+                break;
+            }
+        }
+
+        if (target == null) {
+            throw new IllegalArgumentException("Member not found.");
+        }
+
+        var targetName = target.name();
+        var openTasks = workspace.tasks().stream().anyMatch(task -> task.owner().equals(targetName) && task.status() != TaskStatus.DONE);
+        if (openTasks) {
+            throw new IllegalArgumentException("Reassign open tasks before removing this member.");
+        }
+
+        var members = new ArrayList<>(workspace.members());
+        members.removeIf(member -> member.id() == memberId);
+
+        var activities = prependActivity(workspace.activities(), activity(workspace.user().name(), target.name() + " removed from team."));
+        workspace = copy(workspace, workspace.tasks(), workspace.meetings(), activities, workspace.reports(), members, workspace.team());
+        return recompute();
+    }
+
+    private WorkspaceState recompute() {
+        var tasks = new ArrayList<>(workspace.tasks());
+        tasks.sort(Comparator.comparing(TaskView::status).thenComparing(TaskView::dueDate));
+        var risks = riskEngine.deriveRisks(tasks, workspace.meetings(), workspace.members());
+        workspace = new WorkspaceState(
+                workspace.initialized(),
+                workspace.user(),
+                workspace.team(),
+                List.copyOf(workspace.members()),
+                List.copyOf(tasks),
+                List.copyOf(workspace.meetings()),
+                List.copyOf(workspace.activities()),
+                List.copyOf(workspace.reports()),
+                List.copyOf(risks));
+        return workspace;
+    }
+
+    private WorkspaceState copy(
+            WorkspaceState current,
+            List<TaskView> tasks,
+            List<MeetingView> meetings,
+            List<ActivityView> activities,
+            List<ReportView> reports,
+            List<MemberView> members,
+            TeamProfile team
+    ) {
+        return new WorkspaceState(
+                current.initialized(),
+                current.user(),
+                team,
+                new ArrayList<>(members),
+                new ArrayList<>(tasks),
+                new ArrayList<>(meetings),
+                new ArrayList<>(activities),
+                new ArrayList<>(reports),
+                new ArrayList<>(current.risks()));
+    }
+
+    private WorkspaceState emptyWorkspace() {
+        return new WorkspaceState(
+                false,
+                new UserProfile("", ""),
+                new TeamProfile("", "", "2026-1", "", inviteCode()),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of());
+    }
+
+    private TaskView task(String title, String owner, String dueDate, List<String> blockers, TaskStatus status) {
+        return new TaskView(
+                nextId(),
+                title,
+                owner,
+                status,
+                dueDate,
+                blockers.isEmpty() ? "MEDIUM" : "HIGH",
+                List.copyOf(blockers),
+                List.of(),
+                "Created in assignment2 workspace flow.");
+    }
+
+    private ActivityView activity(String actor, String summary) {
+        return new ActivityView(nextId(), actor, LocalDateTime.now().format(TIMESTAMP_FORMAT), summary);
+    }
+
+    private ReportView report() {
+        var start = LocalDate.now().withDayOfMonth(1);
+        return new ReportView(nextId(), "TeamPulse report draft", start + " ~ " + LocalDate.now(), workspace.tasks().isEmpty() && workspace.meetings().isEmpty() ? "GENERATING" : "READY");
+    }
+
+    private List<ActivityView> prependActivity(List<ActivityView> current, ActivityView next) {
+        var activities = new ArrayList<ActivityView>();
+        activities.add(next);
+        activities.addAll(current);
+        return activities;
+    }
+
+    private String plusDays(String value, int days) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+        var normalized = value.contains("T") ? value.substring(0, 10) : value;
+        return parseLocalDate(normalized, "Meeting time must use a real yyyy-MM-dd or yyyy-MM-ddTHH:mm value.").plusDays(days).toString();
+    }
+
+    private List<String> safeList(List<String> source) {
+        if (source == null) {
+            return List.of();
+        }
+        return source.stream().filter(item -> item != null && !item.isBlank()).map(String::trim).toList();
+    }
+
+    private String defaultText(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value.trim();
+    }
+
+    private void requireText(String value, String message) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(message);
+        }
+    }
+
+    private void requireExistingMember(String name, String message) {
+        var normalized = name == null ? "" : name.trim();
+        var exists = workspace.members().stream().anyMatch(member -> member.name().equalsIgnoreCase(normalized));
+        if (!exists) {
+            throw new IllegalArgumentException(message);
+        }
+    }
+
+    private void ensureInitialized() {
+        if (!workspace.initialized()) {
+            throw new IllegalArgumentException("Workspace is not initialized yet.");
+        }
+    }
+
+    private void validateLocalDate(String value, String message) {
+        parseLocalDate(value, message);
+    }
+
+    private void validateMeetingTime(String value, String message) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(message);
+        }
+        if (value.contains("T")) {
+            parseLocalDate(value.substring(0, 10), message);
+            return;
+        }
+        parseLocalDate(value, message);
+    }
+
+    private LocalDate parseLocalDate(String value, String message) {
+        try {
+            return LocalDate.parse(value);
+        } catch (DateTimeParseException exception) {
+            throw new IllegalArgumentException(message);
+        }
+    }
+
+    private String firstMemberName() {
+        return workspace.members().isEmpty() ? workspace.user().name() : workspace.members().get(0).name();
+    }
+
+    private String inviteCode() {
+        var alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+        var builder = new StringBuilder();
+        for (int index = 0; index < 6; index++) {
+            builder.append(alphabet.charAt(ThreadLocalRandom.current().nextInt(alphabet.length())));
+        }
+        return builder.toString();
+    }
+
+    private long nextId() {
+        return ids.incrementAndGet();
+    }
+}
