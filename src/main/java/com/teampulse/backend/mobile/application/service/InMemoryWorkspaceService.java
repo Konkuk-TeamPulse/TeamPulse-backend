@@ -119,6 +119,43 @@ public class InMemoryWorkspaceService implements WorkspaceService {
         return recompute();
     }
 
+    public synchronized WorkspaceState updateTask(long taskId, UpdateTaskRequest request) {
+        ensureInitialized();
+
+        var tasks = new ArrayList<TaskView>();
+        TaskView target = null;
+        for (var task : workspace.tasks()) {
+            if (task.id() == taskId) {
+                var owner = defaultText(request.owner(), task.owner());
+                requireExistingMember(owner, "Task owner must be an existing team member.");
+                var dueDate = defaultText(request.dueDate(), task.dueDate());
+                validateLocalDate(dueDate, "Task due date must use a real yyyy-MM-dd date.");
+
+                target = new TaskView(
+                        task.id(),
+                        defaultText(request.title(), task.title()),
+                        owner.trim(),
+                        request.status() == null ? task.status() : request.status(),
+                        dueDate.trim(),
+                        defaultText(request.priority(), task.priority()),
+                        request.blockers() == null ? task.blockers() : safeList(request.blockers()),
+                        request.next() == null ? task.next() : safeList(request.next()),
+                        defaultText(request.note(), task.note()));
+                tasks.add(target);
+            } else {
+                tasks.add(task);
+            }
+        }
+
+        if (target == null) {
+            throw new IllegalArgumentException("Task not found.");
+        }
+
+        var activities = prependActivity(workspace.activities(), activity(workspace.user().name(), target.title() + " updated."));
+        workspace = copy(workspace, tasks, workspace.meetings(), activities, workspace.reports(), workspace.members(), workspace.team());
+        return recompute();
+    }
+
     public synchronized WorkspaceState updateTaskStatus(long taskId, UpdateTaskStatusRequest request) {
         ensureInitialized();
         if (request.status() == null) {
@@ -154,6 +191,55 @@ public class InMemoryWorkspaceService implements WorkspaceService {
         }
 
         var activities = prependActivity(workspace.activities(), activity(workspace.user().name(), "Task deleted."));
+        workspace = copy(workspace, tasks, workspace.meetings(), activities, workspace.reports(), workspace.members(), workspace.team());
+        return recompute();
+    }
+
+    public synchronized WorkspaceState addTaskDependency(long taskId, TaskDependencyRequest request) {
+        ensureInitialized();
+        requireText(request.title(), "Dependency title is required.");
+        var dependency = request.title().trim();
+        var tasks = new ArrayList<TaskView>();
+        TaskView target = null;
+        for (var task : workspace.tasks()) {
+            if (task.id() == taskId) {
+                var blockers = new ArrayList<>(task.blockers());
+                if (!blockers.contains(dependency)) {
+                    blockers.add(dependency);
+                }
+                target = new TaskView(task.id(), task.title(), task.owner(), task.status(), task.dueDate(), task.priority(), blockers, task.next(), task.note());
+                tasks.add(target);
+            } else {
+                tasks.add(task);
+            }
+        }
+        if (target == null) {
+            throw new IllegalArgumentException("Task not found.");
+        }
+        var activities = prependActivity(workspace.activities(), activity(workspace.user().name(), "Dependency added to " + target.title() + "."));
+        workspace = copy(workspace, tasks, workspace.meetings(), activities, workspace.reports(), workspace.members(), workspace.team());
+        return recompute();
+    }
+
+    public synchronized WorkspaceState deleteTaskDependency(long taskId, String dependencyTitle) {
+        ensureInitialized();
+        requireText(dependencyTitle, "Dependency title is required.");
+        var tasks = new ArrayList<TaskView>();
+        TaskView target = null;
+        for (var task : workspace.tasks()) {
+            if (task.id() == taskId) {
+                var blockers = new ArrayList<>(task.blockers());
+                blockers.removeIf(blocker -> blocker.equalsIgnoreCase(dependencyTitle.trim()));
+                target = new TaskView(task.id(), task.title(), task.owner(), task.status(), task.dueDate(), task.priority(), blockers, task.next(), task.note());
+                tasks.add(target);
+            } else {
+                tasks.add(task);
+            }
+        }
+        if (target == null) {
+            throw new IllegalArgumentException("Task not found.");
+        }
+        var activities = prependActivity(workspace.activities(), activity(workspace.user().name(), "Dependency removed from " + target.title() + "."));
         workspace = copy(workspace, tasks, workspace.meetings(), activities, workspace.reports(), workspace.members(), workspace.team());
         return recompute();
     }

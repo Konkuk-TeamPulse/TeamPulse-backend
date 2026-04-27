@@ -26,7 +26,16 @@ public class SecurityConfig {
                 .formLogin(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/health", "/api/roadmap", "/api/demo/**", "/api/mobile/**")
+                        .requestMatchers(
+                                "/api/health",
+                                "/api/roadmap",
+                                "/api/demo/**",
+                                "/api/mobile/**",
+                                "/api/auth/**",
+                                "/api/account",
+                                "/api/projects/**",
+                                "/api/invitations/**"
+                        )
                         .permitAll()
                         .anyRequest()
                         .authenticated());
