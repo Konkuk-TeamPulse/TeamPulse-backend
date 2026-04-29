@@ -141,16 +141,49 @@ public class JpaWorkspaceService implements WorkspaceService {
     }
 
     @Override
+    public WorkspaceState updateTask(long taskId, UpdateTaskRequest request) {
+        var workspace = requireInitializedWorkspace();
+        var target = findTask(workspace, taskId);
+
+        if (request.title() != null && !request.title().isBlank()) {
+            target.setTitle(request.title().trim());
+        }
+        if (request.owner() != null && !request.owner().isBlank()) {
+            requireExistingMember(workspace, request.owner(), "Task owner must be an existing team member.");
+            target.setOwner(request.owner().trim());
+        }
+        if (request.status() != null) {
+            target.setStatus(request.status());
+        }
+        if (request.dueDate() != null && !request.dueDate().isBlank()) {
+            validateLocalDate(request.dueDate(), "Task due date must use a real yyyy-MM-dd date.");
+            target.setDueDate(request.dueDate().trim());
+        }
+        if (request.priority() != null && !request.priority().isBlank()) {
+            target.setPriority(request.priority().trim());
+        }
+        if (request.blockers() != null) {
+            target.setBlockers(safeList(request.blockers()));
+        }
+        if (request.next() != null) {
+            target.setNext(safeList(request.next()));
+        }
+        if (request.note() != null) {
+            target.setNote(request.note().trim());
+        }
+
+        workspace.getActivities().add(activity(workspace, workspace.getUserName(), target.getTitle() + " updated."));
+        return persistAndProject(workspace);
+    }
+
+    @Override
     public WorkspaceState updateTaskStatus(long taskId, UpdateTaskStatusRequest request) {
         var workspace = requireInitializedWorkspace();
         if (request.status() == null) {
             throw new IllegalArgumentException("Task status is required.");
         }
 
-        var target = workspace.getTasks().stream()
-                .filter(task -> task.getId() != null && task.getId() == taskId)
-                .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("Task not found."));
+        var target = findTask(workspace, taskId);
 
         target.setStatus(request.status());
         workspace.getActivities().add(activity(workspace, workspace.getUserName(), target.getTitle() + " moved to " + request.status() + "."));
@@ -166,6 +199,33 @@ public class JpaWorkspaceService implements WorkspaceService {
         }
 
         workspace.getActivities().add(activity(workspace, workspace.getUserName(), "Task deleted."));
+        return persistAndProject(workspace);
+    }
+
+    @Override
+    public WorkspaceState addTaskDependency(long taskId, TaskDependencyRequest request) {
+        var workspace = requireInitializedWorkspace();
+        requireText(request.title(), "Dependency title is required.");
+        var target = findTask(workspace, taskId);
+        var dependency = request.title().trim();
+        var blockers = new ArrayList<>(safeList(target.getBlockers()));
+        if (!blockers.contains(dependency)) {
+            blockers.add(dependency);
+        }
+        target.setBlockers(blockers);
+        workspace.getActivities().add(activity(workspace, workspace.getUserName(), "Dependency added to " + target.getTitle() + "."));
+        return persistAndProject(workspace);
+    }
+
+    @Override
+    public WorkspaceState deleteTaskDependency(long taskId, String dependencyTitle) {
+        var workspace = requireInitializedWorkspace();
+        requireText(dependencyTitle, "Dependency title is required.");
+        var target = findTask(workspace, taskId);
+        var blockers = new ArrayList<>(safeList(target.getBlockers()));
+        blockers.removeIf(blocker -> blocker.equalsIgnoreCase(dependencyTitle.trim()));
+        target.setBlockers(blockers);
+        workspace.getActivities().add(activity(workspace, workspace.getUserName(), "Dependency removed from " + target.getTitle() + "."));
         return persistAndProject(workspace);
     }
 
@@ -275,6 +335,13 @@ public class JpaWorkspaceService implements WorkspaceService {
             throw new IllegalArgumentException("Workspace is not initialized yet.");
         }
         return workspace;
+    }
+
+    private MobileTaskEntity findTask(MobileWorkspaceEntity workspace, long taskId) {
+        return workspace.getTasks().stream()
+                .filter(task -> task.getId() != null && task.getId() == taskId)
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Task not found."));
     }
 
     private MobileWorkspaceEntity getOrCreateWorkspace() {
