@@ -204,6 +204,51 @@ Main code:
 - `src/main/java/com/teampulse/backend/mobile/api/ProjectMeetingApiController.java`
 - `src/main/java/com/teampulse/backend/mobile/dto/MeetingSpecResponse.java`
 
+## 2026-04-29 Notion In-Progress API Alignment
+
+Scope:
+
+- Only the rows marked `in progress` in the Notion API table were aligned in this batch.
+- `GET /api/projects/{projectId}/risks` was not changed because the latest table marked risk signal lookup as `not started`.
+- Existing `/api/mobile/**` MVP endpoints were kept for frontend compatibility.
+
+Completed endpoints:
+
+```text
+POST   /api/projects/{projectId}/meetings
+GET    /api/projects/{projectId}/dashboard
+GET    /api/users/me
+POST   /api/tasks/{taskId}/dependencies
+DELETE /api/tasks/{taskId}/dependencies/{dependencyId}
+GET    /api/projects/{projectId}/activity-logs
+DELETE /api/projects/{projectId}/members/me
+GET    /api/projects/{projectId}/members
+```
+
+Implemented behavior:
+
+- Meeting creation now accepts the Notion request shape: `meetingDate`, `agenda`, `content`, `decisions`, `attendeeIds`, and `actionItems`.
+- Project dashboard returns task summary, schedule summary, member workload, risk summary, and dashboard risk items.
+- Current account lookup returns the standard spec wrapper from `GET /api/users/me`. This API remains authenticated by Spring Security.
+- Task dependency add/delete now accepts task IDs instead of the earlier MVP title-based dependency API shape.
+- Activity logs now return `logId`, `action`, `content`, `userName`, and `createdAt` through `/activity-logs`.
+- Team member list now returns Notion-style `memberId`, `name`, `email`, and `role`.
+- Team leave now returns a standard success wrapper with a `null` result.
+
+Main code:
+
+- `src/main/java/com/teampulse/backend/mobile/api/ProjectApiController.java`
+- `src/main/java/com/teampulse/backend/mobile/api/ProjectMeetingApiController.java`
+- `src/main/java/com/teampulse/backend/mobile/api/TaskApiController.java`
+- `src/main/java/com/teampulse/backend/mobile/dto/UserMeResponse.java`
+- `src/main/java/com/teampulse/backend/mobile/dto/DashboardResponse.java`
+- `src/main/java/com/teampulse/backend/mobile/dto/ActivityLogSpecResponse.java`
+- `src/main/java/com/teampulse/backend/mobile/dto/MemberSpecResponse.java`
+- `src/main/java/com/teampulse/backend/mobile/dto/MeetingCreateSpecRequest.java`
+- `src/main/java/com/teampulse/backend/mobile/dto/MeetingCreateSpecResponse.java`
+- `src/main/java/com/teampulse/backend/mobile/dto/TaskDependencySpecRequest.java`
+- `src/main/java/com/teampulse/backend/mobile/dto/TaskDependencySpecResponse.java`
+
 ## Verification
 
 Focused auth API test:
@@ -228,7 +273,20 @@ Full backend test:
 Result:
 
 ```text
-Tests run: 20, Failures: 0, Errors: 0, Skipped: 0
+Tests run: 21, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
+```
+
+Focused Notion in-progress API test:
+
+```powershell
+.\mvnw.cmd '-Dtest=WorkspaceControllerTest' test '-Dspring.profiles.active=demo'
+```
+
+Result:
+
+```text
+Tests run: 8, Failures: 0, Errors: 0, Skipped: 0
 BUILD SUCCESS
 ```
 

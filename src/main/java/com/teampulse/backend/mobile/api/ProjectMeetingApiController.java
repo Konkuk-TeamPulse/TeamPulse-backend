@@ -4,12 +4,15 @@ import com.teampulse.backend.common.api.SpecResponse;
 import com.teampulse.backend.mobile.application.MobileMeetingUseCase;
 import com.teampulse.backend.mobile.application.WorkspaceQueryUseCase;
 import com.teampulse.backend.mobile.dto.CreateMeetingRequest;
+import com.teampulse.backend.mobile.dto.MeetingCreateSpecRequest;
+import com.teampulse.backend.mobile.dto.MeetingCreateSpecResponse;
 import com.teampulse.backend.mobile.dto.MeetingSpecResponse;
 import com.teampulse.backend.mobile.dto.MeetingView;
 import com.teampulse.backend.mobile.dto.WorkspaceState;
 import jakarta.validation.Valid;
 import java.util.Comparator;
 import java.util.List;
+import java.util.stream.Stream;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -43,13 +46,17 @@ public class ProjectMeetingApiController {
     }
 
     @PostMapping
-    public SpecResponse<MeetingSpecResponse> createMeeting(
+    public SpecResponse<MeetingCreateSpecResponse> createMeeting(
             @PathVariable long projectId,
-            @Valid @RequestBody CreateMeetingRequest request
+            @Valid @RequestBody MeetingCreateSpecRequest request
     ) {
         requireDemoProject(projectId);
-        var workspace = mobileMeetingUseCase.createMeeting(request);
-        return SpecResponse.ok(MEETING_CREATED_MESSAGE, MeetingSpecResponse.from(latestMeeting(workspace)));
+        var workspace = mobileMeetingUseCase.createMeeting(toCreateMeetingRequest(request));
+        var meeting = latestMeeting(workspace);
+        return SpecResponse.ok(MEETING_CREATED_MESSAGE, new MeetingCreateSpecResponse(
+                meeting.id(),
+                meeting.title(),
+                meeting.time()));
     }
 
     @GetMapping("/{meetingId}")
@@ -66,6 +73,29 @@ public class ProjectMeetingApiController {
         return workspace.meetings().stream()
                 .max(Comparator.comparingLong(MeetingView::id))
                 .orElseThrow(() -> new IllegalArgumentException("Meeting not found."));
+    }
+
+    private CreateMeetingRequest toCreateMeetingRequest(MeetingCreateSpecRequest request) {
+        var decisions = request.decisions() == null || request.decisions().isBlank()
+                ? List.<String>of()
+                : List.of(request.decisions().trim());
+        var actions = request.actionItems() == null
+                ? List.<String>of()
+                : request.actionItems().stream()
+                .map(MeetingCreateSpecRequest.ActionItemRequest::content)
+                .toList();
+        var agenda = Stream.of(request.agenda(), request.content())
+                .filter(value -> value != null && !value.isBlank())
+                .reduce((left, right) -> left + "\n\n" + right)
+                .orElse(request.agenda());
+        return new CreateMeetingRequest(
+                request.title(),
+                request.meetingDate(),
+                agenda,
+                decisions,
+                actions,
+                null,
+                false);
     }
 
     private void requireDemoProject(long projectId) {

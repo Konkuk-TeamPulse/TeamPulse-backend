@@ -1,5 +1,6 @@
 package com.teampulse.backend.mobile.api;
 
+import static org.hamcrest.Matchers.hasItem;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -191,6 +192,67 @@ class WorkspaceControllerTest {
     }
 
     @Test
+    void accountDashboardActivityMembersAndLeaveUseSpecResponseShape() throws Exception {
+        mockMvc.perform(post("/api/mobile/workspace/reset"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/projects")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "projectName": "Progressing API Project",
+                                  "subject": "Advanced Project",
+                                  "description": "Progressing API test project",
+                                  "startDate": "2026-04-01",
+                                  "endDate": "2026-06-09"
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/users/me")
+                        .with(user("tester")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.responseCode").value(1000))
+                .andExpect(jsonPath("$.result.userId").isNumber())
+                .andExpect(jsonPath("$.result.email").value("leader@teampulse.app"))
+                .andExpect(jsonPath("$.result.name").value("Demo Leader"));
+
+        mockMvc.perform(get("/api/projects/1/dashboard"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.responseCode").value(1000))
+                .andExpect(jsonPath("$.result.projectId").value(1))
+                .andExpect(jsonPath("$.result.projectName").value("Progressing API Project"))
+                .andExpect(jsonPath("$.result.taskSummary.totalTaskCount").value(0))
+                .andExpect(jsonPath("$.result.scheduleSummary.projectStartDate").value("2026-04-01"))
+                .andExpect(jsonPath("$.result.memberWorkload[0].name").value("Demo Leader"))
+                .andExpect(jsonPath("$.result.riskSummary.totalRiskCount").isNumber());
+
+        mockMvc.perform(get("/api/projects/1/activity-logs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.responseCode").value(1000))
+                .andExpect(jsonPath("$.result[0].logId").isNumber())
+                .andExpect(jsonPath("$.result[0].content").exists())
+                .andExpect(jsonPath("$.result[0].userName").value("Demo Leader"));
+
+        mockMvc.perform(get("/api/projects/1/members"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.responseCode").value(1000))
+                .andExpect(jsonPath("$.result[0].memberId").isNumber())
+                .andExpect(jsonPath("$.result[0].email").value("leader@teampulse.app"))
+                .andExpect(jsonPath("$.result[0].role").value("LEADER"));
+
+        mockMvc.perform(delete("/api/projects/1/members/me"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.responseCode").value(1000))
+                .andExpect(jsonPath("$.result").doesNotExist());
+    }
+
+    @Test
     void taskApisUseNotionSpecRequestAndResponseShape() throws Exception {
         mockMvc.perform(post("/api/mobile/workspace/reset"))
                 .andExpect(status().isOk());
@@ -210,9 +272,9 @@ class WorkspaceControllerTest {
 
         MvcResult membersResult = mockMvc.perform(get("/api/projects/1/members"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.isSuccess").value(true))
                 .andReturn();
-        Number assigneeId = JsonPath.read(membersResult.getResponse().getContentAsString(), "$.data[0].id");
+        Number assigneeId = JsonPath.read(membersResult.getResponse().getContentAsString(), "$.result[0].memberId");
 
         MvcResult createResult = mockMvc.perform(post("/api/projects/1/tasks")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -234,14 +296,48 @@ class WorkspaceControllerTest {
                 .andReturn();
         Number taskId = JsonPath.read(createResult.getResponse().getContentAsString(), "$.result.taskId");
 
+        MvcResult precedingResult = mockMvc.perform(post("/api/projects/1/tasks")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "title": "Prepare API data",
+                                  "description": "Prepare task dependency source",
+                                  "assigneeId": %d,
+                                  "dueDate": "2026-04-27"
+                                }
+                                """.formatted(assigneeId.longValue())))
+                .andExpect(status().isOk())
+                .andReturn();
+        Number precedingTaskId = JsonPath.read(precedingResult.getResponse().getContentAsString(), "$.result.taskId");
+
+        mockMvc.perform(post("/api/tasks/{taskId}/dependencies", taskId.longValue())
+                        .with(user("tester"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "precedingTaskId": %d
+                                }
+                                """.formatted(precedingTaskId.longValue())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.responseCode").value(1000))
+                .andExpect(jsonPath("$.result.taskId").value(taskId.longValue()))
+                .andExpect(jsonPath("$.result.precedingTaskId").value(precedingTaskId.longValue()));
+
+        mockMvc.perform(delete("/api/tasks/{taskId}/dependencies/{dependencyId}", taskId.longValue(), precedingTaskId.longValue())
+                        .with(user("tester")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.responseCode").value(1000))
+                .andExpect(jsonPath("$.result").doesNotExist());
+
         mockMvc.perform(get("/api/projects/1/tasks"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.isSuccess").value(true))
                 .andExpect(jsonPath("$.responseCode").value(1000))
-                .andExpect(jsonPath("$.result[0].taskId").value(taskId.longValue()))
-                .andExpect(jsonPath("$.result[0].title").value("Write API spec"))
-                .andExpect(jsonPath("$.result[0].assigneeName").value("Demo Leader"))
-                .andExpect(jsonPath("$.result[0].dueDate").value("2026-04-28"));
+                .andExpect(jsonPath("$.result[?(@.taskId == %d)].title".formatted(taskId.longValue())).value(hasItem("Write API spec")))
+                .andExpect(jsonPath("$.result[?(@.taskId == %d)].assigneeName".formatted(taskId.longValue())).value(hasItem("Demo Leader")))
+                .andExpect(jsonPath("$.result[?(@.taskId == %d)].dueDate".formatted(taskId.longValue())).value(hasItem("2026-04-28")));
 
         mockMvc.perform(patch("/api/tasks/{taskId}", taskId.longValue())
                         .with(user("tester"))
@@ -307,21 +403,25 @@ class WorkspaceControllerTest {
                         .content("""
                                 {
                                   "title": "Weekly Sync",
-                                  "time": "2026-04-29T19:00",
+                                  "meetingDate": "2026-04-29",
                                   "agenda": "Review backend progress",
-                                  "decisions": ["Keep Notion API shape"],
-                                  "actions": ["Implement meeting APIs"],
-                                  "actionOwner": "Demo Leader",
-                                  "createTasks": false
+                                  "content": "Discuss remaining in-progress APIs",
+                                  "decisions": "Keep Notion API shape",
+                                  "attendeeIds": [1],
+                                  "actionItems": [
+                                    {
+                                      "content": "Implement meeting APIs",
+                                      "assigneeId": 1,
+                                      "dueDate": "2026-04-30"
+                                    }
+                                  ]
                                 }
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.isSuccess").value(true))
                 .andExpect(jsonPath("$.responseCode").value(1000))
                 .andExpect(jsonPath("$.result.title").value("Weekly Sync"))
-                .andExpect(jsonPath("$.result.time").value("2026-04-29T19:00"))
-                .andExpect(jsonPath("$.result.agenda").value("Review backend progress"))
-                .andExpect(jsonPath("$.result.decisions[0]").value("Keep Notion API shape"))
+                .andExpect(jsonPath("$.result.meetingDate").value("2026-04-29"))
                 .andReturn();
         Number meetingId = JsonPath.read(createResult.getResponse().getContentAsString(), "$.result.meetingId");
 

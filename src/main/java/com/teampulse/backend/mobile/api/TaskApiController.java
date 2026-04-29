@@ -4,6 +4,9 @@ import com.teampulse.backend.common.api.SpecResponse;
 import com.teampulse.backend.mobile.application.MobileTaskUseCase;
 import com.teampulse.backend.mobile.application.WorkspaceQueryUseCase;
 import com.teampulse.backend.mobile.dto.MemberView;
+import com.teampulse.backend.mobile.dto.TaskDependencyRequest;
+import com.teampulse.backend.mobile.dto.TaskDependencySpecRequest;
+import com.teampulse.backend.mobile.dto.TaskDependencySpecResponse;
 import com.teampulse.backend.mobile.dto.TaskStatusSpecResponse;
 import com.teampulse.backend.mobile.dto.TaskUpdateSpecRequest;
 import com.teampulse.backend.mobile.dto.TaskUpdateSpecResponse;
@@ -14,6 +17,7 @@ import com.teampulse.backend.mobile.dto.WorkspaceState;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -27,6 +31,8 @@ public class TaskApiController {
     private static final String TASK_UPDATED_MESSAGE = "\uD0DC\uC2A4\uD06C\uAC00 \uC218\uC815\uB418\uC5C8\uC2B5\uB2C8\uB2E4.";
     private static final String TASK_DELETED_MESSAGE = "\uD0DC\uC2A4\uD06C\uAC00 \uC0AD\uC81C\uB418\uC5C8\uC2B5\uB2C8\uB2E4.";
     private static final String TASK_STATUS_UPDATED_MESSAGE = "\uD0DC\uC2A4\uD06C \uC0C1\uD0DC\uAC00 \uBCC0\uACBD\uB418\uC5C8\uC2B5\uB2C8\uB2E4.";
+    private static final String TASK_DEPENDENCY_ADDED_MESSAGE = "\uD0DC\uC2A4\uD06C \uC758\uC874\uAD00\uACC4\uAC00 \uCD94\uAC00\uB418\uC5C8\uC2B5\uB2C8\uB2E4.";
+    private static final String TASK_DEPENDENCY_DELETED_MESSAGE = "\uD0DC\uC2A4\uD06C \uC758\uC874\uAD00\uACC4\uAC00 \uC0AD\uC81C\uB418\uC5C8\uC2B5\uB2C8\uB2E4.";
 
     private final WorkspaceQueryUseCase workspaceQueryUseCase;
     private final MobileTaskUseCase mobileTaskUseCase;
@@ -73,6 +79,30 @@ public class TaskApiController {
         var updated = mobileTaskUseCase.updateTaskStatus(taskId, request);
         var task = requireTaskById(updated, taskId);
         return SpecResponse.ok(TASK_STATUS_UPDATED_MESSAGE, new TaskStatusSpecResponse(task.id(), task.status()));
+    }
+
+    @PostMapping("/{taskId}/dependencies")
+    public SpecResponse<TaskDependencySpecResponse> addDependency(
+            @PathVariable long taskId,
+            @Valid @RequestBody TaskDependencySpecRequest request
+    ) {
+        var workspace = workspaceQueryUseCase.getWorkspace();
+        var task = requireTaskById(workspace, taskId);
+        var precedingTask = requireTaskById(workspace, request.precedingTaskId());
+        if (task.id() == precedingTask.id()) {
+            throw new IllegalArgumentException("Task cannot depend on itself.");
+        }
+        mobileTaskUseCase.addTaskDependency(taskId, new TaskDependencyRequest(precedingTask.title()));
+        return SpecResponse.ok(TASK_DEPENDENCY_ADDED_MESSAGE, new TaskDependencySpecResponse(taskId, precedingTask.id()));
+    }
+
+    @DeleteMapping("/{taskId}/dependencies/{dependencyId}")
+    public SpecResponse<Void> deleteDependency(@PathVariable long taskId, @PathVariable long dependencyId) {
+        var workspace = workspaceQueryUseCase.getWorkspace();
+        requireTaskById(workspace, taskId);
+        var precedingTask = requireTaskById(workspace, dependencyId);
+        mobileTaskUseCase.deleteTaskDependency(taskId, precedingTask.title());
+        return SpecResponse.ok(TASK_DEPENDENCY_DELETED_MESSAGE, null);
     }
 
     private MemberView requireMemberById(WorkspaceState workspace, long memberId) {

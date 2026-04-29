@@ -11,9 +11,12 @@ import com.teampulse.backend.mobile.application.MobileTeamUseCase;
 import com.teampulse.backend.mobile.application.WorkspaceLifecycleUseCase;
 import com.teampulse.backend.mobile.application.WorkspaceQueryUseCase;
 import com.teampulse.backend.mobile.dto.ActivityView;
+import com.teampulse.backend.mobile.dto.ActivityLogSpecResponse;
 import com.teampulse.backend.mobile.dto.BootstrapWorkspaceRequest;
 import com.teampulse.backend.mobile.dto.CreateMemberRequest;
+import com.teampulse.backend.mobile.dto.DashboardResponse;
 import com.teampulse.backend.mobile.dto.MemberView;
+import com.teampulse.backend.mobile.dto.MemberSpecResponse;
 import com.teampulse.backend.mobile.dto.ProjectCreateRequest;
 import com.teampulse.backend.mobile.dto.ProjectCreateResponse;
 import com.teampulse.backend.mobile.dto.ProjectDetailView;
@@ -27,6 +30,7 @@ import com.teampulse.backend.mobile.dto.TaskView;
 import com.teampulse.backend.mobile.dto.TeamProfile;
 import com.teampulse.backend.mobile.dto.UpdateAccountRequest;
 import com.teampulse.backend.mobile.dto.UpdateTeamRequest;
+import com.teampulse.backend.mobile.dto.UserMeResponse;
 import com.teampulse.backend.mobile.dto.UserProfile;
 import com.teampulse.backend.mobile.dto.WorkspaceState;
 import jakarta.validation.Valid;
@@ -34,6 +38,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeParseException;
+import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -92,6 +97,12 @@ public class ProjectApiController {
     @PatchMapping("/account")
     public ApiResponse<UserProfile> updateAccount(@Valid @RequestBody UpdateAccountRequest request) {
         return ApiResponse.ok(mobileAccountUseCase.updateAccount(request).user());
+    }
+
+    @GetMapping("/users/me")
+    public SpecResponse<UserMeResponse> getCurrentUser() {
+        var workspace = workspaceQueryUseCase.getWorkspace();
+        return SpecResponse.ok(SUCCESS_MESSAGE, userMe(workspace));
     }
 
     @GetMapping("/account/activities")
@@ -156,15 +167,18 @@ public class ProjectApiController {
     }
 
     @GetMapping("/projects/{projectId}/dashboard")
-    public ApiResponse<WorkspaceState> getDashboard(@PathVariable long projectId) {
+    public SpecResponse<DashboardResponse> getDashboard(@PathVariable long projectId) {
         requireDemoProject(projectId);
-        return ApiResponse.ok(workspaceQueryUseCase.getWorkspace());
+        return SpecResponse.ok(SUCCESS_MESSAGE, dashboard(workspaceQueryUseCase.getWorkspace()));
     }
 
     @GetMapping("/projects/{projectId}/members")
-    public ApiResponse<List<MemberView>> listMembers(@PathVariable long projectId) {
+    public SpecResponse<List<MemberSpecResponse>> listMembers(@PathVariable long projectId) {
         requireDemoProject(projectId);
-        return ApiResponse.ok(workspaceQueryUseCase.getWorkspace().members());
+        var workspace = workspaceQueryUseCase.getWorkspace();
+        return SpecResponse.ok(SUCCESS_MESSAGE, workspace.members().stream()
+                .map(member -> memberSpec(member, workspace))
+                .toList());
     }
 
     @PostMapping("/projects/{projectId}/members")
@@ -177,7 +191,7 @@ public class ProjectApiController {
     }
 
     @DeleteMapping("/projects/{projectId}/members/me")
-    public ApiResponse<WorkspaceState> leaveProject(@PathVariable long projectId) {
+    public SpecResponse<Void> leaveProject(@PathVariable long projectId) {
         requireDemoProject(projectId);
         var workspace = workspaceQueryUseCase.getWorkspace();
         var currentUser = workspace.user().name();
@@ -185,7 +199,12 @@ public class ProjectApiController {
                 .filter(member -> member.name().equalsIgnoreCase(currentUser))
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("Current user is not a team member."));
-        return ApiResponse.ok(mobileMemberUseCase.deleteMember(target.id()));
+        if (workspace.members().size() == 1) {
+            workspaceLifecycleUseCase.reset();
+        } else {
+            mobileMemberUseCase.deleteMember(target.id());
+        }
+        return SpecResponse.ok("\uD300\uC5D0\uC11C \uD0C8\uD1F4\uD588\uC2B5\uB2C8\uB2E4.", null);
     }
 
     @DeleteMapping("/projects/{projectId}/members/{memberId}")
@@ -205,6 +224,14 @@ public class ProjectApiController {
     public ApiResponse<List<ActivityView>> listActivities(@PathVariable long projectId) {
         requireDemoProject(projectId);
         return ApiResponse.ok(workspaceQueryUseCase.getWorkspace().activities());
+    }
+
+    @GetMapping("/projects/{projectId}/activity-logs")
+    public SpecResponse<List<ActivityLogSpecResponse>> listActivityLogs(@PathVariable long projectId) {
+        requireDemoProject(projectId);
+        return SpecResponse.ok(SUCCESS_MESSAGE, workspaceQueryUseCase.getWorkspace().activities().stream()
+                .map(this::activityLog)
+                .toList());
     }
 
     @GetMapping("/projects/{projectId}/risks")
@@ -273,6 +300,126 @@ public class ProjectApiController {
                 TeamRole.LEADER.name(),
                 workspace.team().dueDate()
         );
+    }
+
+    private UserMeResponse userMe(WorkspaceState workspace) {
+        var leader = workspace.members().stream()
+                .filter(member -> member.name().equalsIgnoreCase(workspace.user().name()))
+                .findFirst();
+        return new UserMeResponse(
+                leader.map(MemberView::id).orElse(DEMO_PROJECT_ID),
+                workspace.user().email(),
+                workspace.user().email(),
+                workspace.user().name(),
+                workspace.user().university(),
+                workspace.user().phone());
+    }
+
+    private DashboardResponse dashboard(WorkspaceState workspace) {
+        var tasks = workspace.tasks();
+        var doneCount = (int) tasks.stream().filter(task -> task.status() == TaskStatus.DONE).count();
+        var todoCount = (int) tasks.stream().filter(task -> task.status() == TaskStatus.TODO).count();
+        var doingCount = (int) tasks.stream().filter(task -> task.status() == TaskStatus.DOING).count();
+        var totalCount = tasks.size();
+        var progressRate = totalCount == 0 ? 0.0 : Math.round((doneCount * 1000.0 / totalCount)) / 10.0;
+        var today = LocalDate.now();
+
+        var taskSummary = new DashboardResponse.TaskSummary(totalCount, todoCount, doingCount, doneCount, progressRate);
+        var scheduleSummary = new DashboardResponse.ScheduleSummary(
+                workspace.team().startDate(),
+                workspace.team().dueDate(),
+                remainingDays(workspace.team().dueDate(), today),
+                (int) tasks.stream()
+                        .filter(task -> task.status() != TaskStatus.DONE)
+                        .filter(task -> parseDateOrMax(task.dueDate()).isBefore(today))
+                        .count(),
+                (int) tasks.stream()
+                        .filter(task -> task.status() != TaskStatus.DONE)
+                        .filter(task -> {
+                            var dueDate = parseDateOrMax(task.dueDate());
+                            return !dueDate.equals(LocalDate.MAX)
+                                    && !dueDate.isBefore(today)
+                                    && ChronoUnit.DAYS.between(today, dueDate) <= 3;
+                        })
+                        .count());
+
+        var memberWorkload = workspace.members().stream()
+                .map(member -> new DashboardResponse.MemberWorkload(
+                        member.id(),
+                        member.name(),
+                        (int) tasks.stream().filter(task -> task.owner().equalsIgnoreCase(member.name())).count(),
+                        (int) tasks.stream()
+                                .filter(task -> task.owner().equalsIgnoreCase(member.name()))
+                                .filter(task -> task.status() == TaskStatus.DONE)
+                                .count()))
+                .toList();
+
+        var dashboardRisks = workspace.risks().stream()
+                .map(this::dashboardRisk)
+                .toList();
+        var dangerCount = (int) dashboardRisks.stream().filter(risk -> risk.level().equals("DANGER")).count();
+        var warningCount = (int) dashboardRisks.stream().filter(risk -> risk.level().equals("WARNING")).count();
+        var cautionCount = (int) dashboardRisks.stream().filter(risk -> risk.level().equals("CAUTION")).count();
+        var riskSummary = new DashboardResponse.RiskSummary(
+                dashboardRisks.size(),
+                cautionCount,
+                warningCount,
+                dangerCount,
+                dangerCount > 0);
+
+        return new DashboardResponse(
+                DEMO_PROJECT_ID,
+                workspace.team().name(),
+                taskSummary,
+                scheduleSummary,
+                memberWorkload,
+                riskSummary,
+                dashboardRisks);
+    }
+
+    private DashboardResponse.DashboardRisk dashboardRisk(RiskView risk) {
+        var level = switch (risk.severity()) {
+            case CRITICAL -> "DANGER";
+            case WARNING -> "WARNING";
+            case INFO -> "CAUTION";
+        };
+        return new DashboardResponse.DashboardRisk(
+                risk.title().toUpperCase().replace(' ', '_'),
+                level,
+                risk.body(),
+                null,
+                null,
+                null,
+                null,
+                List.of(),
+                List.of(risk.action()));
+    }
+
+    private long remainingDays(String projectEndDate, LocalDate today) {
+        var endDate = parseDateOrMax(projectEndDate);
+        if (endDate.equals(LocalDate.MAX)) {
+            return 0;
+        }
+        return Math.max(0, ChronoUnit.DAYS.between(today, endDate));
+    }
+
+    private MemberSpecResponse memberSpec(MemberView member, WorkspaceState workspace) {
+        return new MemberSpecResponse(
+                member.id(),
+                member.name(),
+                member.name().equalsIgnoreCase(workspace.user().name())
+                        ? workspace.user().email()
+                        : member.name().toLowerCase().replace(" ", ".") + "@example.com",
+                member.role());
+    }
+
+    private ActivityLogSpecResponse activityLog(ActivityView activity) {
+        return new ActivityLogSpecResponse(
+                activity.id(),
+                "ACTIVITY_RECORDED",
+                activity.summary(),
+                activity.actor(),
+                activity.at());
     }
 
     private ProjectDetailView projectDetail(WorkspaceState workspace) {
