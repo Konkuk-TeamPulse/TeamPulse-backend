@@ -1,7 +1,10 @@
 package com.teampulse.backend.mobile.api;
 
 import com.teampulse.backend.common.api.ApiResponse;
+import com.teampulse.backend.common.api.SpecResponse;
+import com.teampulse.backend.domain.task.TaskStatus;
 import com.teampulse.backend.domain.team.TeamRole;
+import com.teampulse.backend.mobile.application.MobileAccountUseCase;
 import com.teampulse.backend.mobile.application.MobileMemberUseCase;
 import com.teampulse.backend.mobile.application.MobileReportUseCase;
 import com.teampulse.backend.mobile.application.MobileTeamUseCase;
@@ -11,18 +14,27 @@ import com.teampulse.backend.mobile.dto.ActivityView;
 import com.teampulse.backend.mobile.dto.BootstrapWorkspaceRequest;
 import com.teampulse.backend.mobile.dto.CreateMemberRequest;
 import com.teampulse.backend.mobile.dto.MemberView;
+import com.teampulse.backend.mobile.dto.ProjectCreateRequest;
+import com.teampulse.backend.mobile.dto.ProjectCreateResponse;
+import com.teampulse.backend.mobile.dto.ProjectDetailView;
+import com.teampulse.backend.mobile.dto.ProjectSummaryView;
+import com.teampulse.backend.mobile.dto.ProjectUpdateRequest;
+import com.teampulse.backend.mobile.dto.ProjectUpdateResponse;
 import com.teampulse.backend.mobile.dto.ReportView;
+import com.teampulse.backend.mobile.dto.RiskActionOption;
 import com.teampulse.backend.mobile.dto.RiskView;
+import com.teampulse.backend.mobile.dto.TaskView;
 import com.teampulse.backend.mobile.dto.TeamProfile;
+import com.teampulse.backend.mobile.dto.UpdateAccountRequest;
 import com.teampulse.backend.mobile.dto.UpdateTeamRequest;
 import com.teampulse.backend.mobile.dto.UserProfile;
 import com.teampulse.backend.mobile.dto.WorkspaceState;
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Pattern;
-import jakarta.validation.constraints.Size;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeParseException;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import org.springframework.http.ContentDisposition;
@@ -43,9 +55,15 @@ import org.springframework.web.bind.annotation.RestController;
 public class ProjectApiController {
 
     private static final long DEMO_PROJECT_ID = 1L;
+    private static final String DEFAULT_OWNER_NAME = "Demo Leader";
+    private static final String DEFAULT_OWNER_EMAIL = "leader@teampulse.app";
+    private static final String DEFAULT_SEMESTER = "2026-1";
+    private static final String SUCCESS_MESSAGE = "\uC694\uCCAD\uC5D0 \uC131\uACF5\uD588\uC2B5\uB2C8\uB2E4.";
+    private static final String PROJECT_CREATED_MESSAGE = "\uD504\uB85C\uC81D\uD2B8\uAC00 \uC0DD\uC131\uB418\uC5C8\uC2B5\uB2C8\uB2E4.";
 
     private final WorkspaceQueryUseCase workspaceQueryUseCase;
     private final WorkspaceLifecycleUseCase workspaceLifecycleUseCase;
+    private final MobileAccountUseCase mobileAccountUseCase;
     private final MobileTeamUseCase mobileTeamUseCase;
     private final MobileMemberUseCase mobileMemberUseCase;
     private final MobileReportUseCase mobileReportUseCase;
@@ -53,12 +71,14 @@ public class ProjectApiController {
     public ProjectApiController(
             WorkspaceQueryUseCase workspaceQueryUseCase,
             WorkspaceLifecycleUseCase workspaceLifecycleUseCase,
+            MobileAccountUseCase mobileAccountUseCase,
             MobileTeamUseCase mobileTeamUseCase,
             MobileMemberUseCase mobileMemberUseCase,
             MobileReportUseCase mobileReportUseCase
     ) {
         this.workspaceQueryUseCase = workspaceQueryUseCase;
         this.workspaceLifecycleUseCase = workspaceLifecycleUseCase;
+        this.mobileAccountUseCase = mobileAccountUseCase;
         this.mobileTeamUseCase = mobileTeamUseCase;
         this.mobileMemberUseCase = mobileMemberUseCase;
         this.mobileReportUseCase = mobileReportUseCase;
@@ -69,40 +89,70 @@ public class ProjectApiController {
         return ApiResponse.ok(workspaceQueryUseCase.getWorkspace().user());
     }
 
+    @PatchMapping("/account")
+    public ApiResponse<UserProfile> updateAccount(@Valid @RequestBody UpdateAccountRequest request) {
+        return ApiResponse.ok(mobileAccountUseCase.updateAccount(request).user());
+    }
+
+    @GetMapping("/account/activities")
+    public ApiResponse<List<ActivityView>> listAccountActivities() {
+        var workspace = workspaceQueryUseCase.getWorkspace();
+        var currentUser = workspace.user().name();
+        return ApiResponse.ok(workspace.activities().stream()
+                .filter(activity -> activity.actor().equalsIgnoreCase(currentUser))
+                .toList());
+    }
+
     @PostMapping("/projects")
-    public ApiResponse<WorkspaceState> createProject(@Valid @RequestBody ProjectRequest request) {
-        return ApiResponse.ok(workspaceLifecycleUseCase.bootstrap(new BootstrapWorkspaceRequest(
-                request.ownerName(),
-                request.ownerEmail(),
-                request.name(),
-                request.courseName(),
-                request.semester(),
-                request.dueDate()
-        )));
+    public SpecResponse<ProjectCreateResponse> createProject(@Valid @RequestBody ProjectCreateRequest request) {
+        var currentUser = workspaceQueryUseCase.getWorkspace().user();
+        var workspace = workspaceLifecycleUseCase.bootstrap(new BootstrapWorkspaceRequest(
+                defaultText(currentUser.name(), DEFAULT_OWNER_NAME),
+                defaultText(currentUser.email(), DEFAULT_OWNER_EMAIL),
+                request.projectName(),
+                request.subject(),
+                DEFAULT_SEMESTER,
+                request.endDate(),
+                normalizeNullable(request.description()),
+                normalizeNullable(request.startDate())
+        ));
+        return SpecResponse.ok(PROJECT_CREATED_MESSAGE, new ProjectCreateResponse(
+                DEMO_PROJECT_ID,
+                workspace.team().name(),
+                TeamRole.LEADER.name()
+        ));
     }
 
     @GetMapping("/projects")
-    public ApiResponse<List<ProjectSummary>> listProjects() {
+    public SpecResponse<List<ProjectSummaryView>> listProjects() {
         var workspace = workspaceQueryUseCase.getWorkspace();
         if (!workspace.initialized()) {
-            return ApiResponse.ok(List.of());
+            return SpecResponse.ok(SUCCESS_MESSAGE, List.of());
         }
-        return ApiResponse.ok(List.of(summary(workspace)));
+        return SpecResponse.ok(SUCCESS_MESSAGE, List.of(projectSummary(workspace)));
     }
 
     @GetMapping("/projects/{projectId}")
-    public ApiResponse<WorkspaceState> getProject(@PathVariable long projectId) {
+    public SpecResponse<ProjectDetailView> getProject(@PathVariable long projectId) {
         requireDemoProject(projectId);
-        return ApiResponse.ok(workspaceQueryUseCase.getWorkspace());
+        return SpecResponse.ok(SUCCESS_MESSAGE, projectDetail(workspaceQueryUseCase.getWorkspace()));
     }
 
     @PatchMapping("/projects/{projectId}")
-    public ApiResponse<WorkspaceState> updateProject(
+    public SpecResponse<ProjectUpdateResponse> updateProject(
             @PathVariable long projectId,
-            @Valid @RequestBody UpdateTeamRequest request
+            @Valid @RequestBody ProjectUpdateRequest request
     ) {
         requireDemoProject(projectId);
-        return ApiResponse.ok(mobileTeamUseCase.updateTeam(request));
+        var workspace = mobileTeamUseCase.updateTeam(new UpdateTeamRequest(
+                request.projectName(),
+                request.subject(),
+                DEFAULT_SEMESTER,
+                request.endDate(),
+                normalizeNullable(request.description()),
+                normalizeNullable(request.startDate())
+        ));
+        return SpecResponse.ok(SUCCESS_MESSAGE, projectUpdateResponse(workspace));
     }
 
     @GetMapping("/projects/{projectId}/dashboard")
@@ -163,6 +213,17 @@ public class ProjectApiController {
         return ApiResponse.ok(workspaceQueryUseCase.getWorkspace().risks());
     }
 
+    @GetMapping("/projects/{projectId}/risks/{riskId}/actions")
+    public ApiResponse<List<RiskActionOption>> listRiskActions(@PathVariable long projectId, @PathVariable long riskId) {
+        requireDemoProject(projectId);
+        var workspace = workspaceQueryUseCase.getWorkspace();
+        var risk = workspace.risks().stream()
+                .filter(candidate -> candidate.id() == riskId)
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Risk not found."));
+        return ApiResponse.ok(riskActions(risk, workspace));
+    }
+
     @PostMapping("/projects/{projectId}/reports")
     public ApiResponse<WorkspaceState> createReport(@PathVariable long projectId) {
         requireDemoProject(projectId);
@@ -204,15 +265,37 @@ public class ProjectApiController {
                 .body(body);
     }
 
-    private ProjectSummary summary(WorkspaceState workspace) {
-        return new ProjectSummary(
+    private ProjectSummaryView projectSummary(WorkspaceState workspace) {
+        return new ProjectSummaryView(
                 DEMO_PROJECT_ID,
                 workspace.team().name(),
                 workspace.team().courseName(),
-                workspace.team().semester(),
+                TeamRole.LEADER.name(),
+                workspace.team().dueDate()
+        );
+    }
+
+    private ProjectDetailView projectDetail(WorkspaceState workspace) {
+        return new ProjectDetailView(
+                DEMO_PROJECT_ID,
+                workspace.team().name(),
+                workspace.team().courseName(),
+                workspace.team().description(),
+                workspace.team().startDate(),
                 workspace.team().dueDate(),
-                workspace.members().size(),
-                workspace.tasks().size()
+                workspace.members().size()
+        );
+    }
+
+    private ProjectUpdateResponse projectUpdateResponse(WorkspaceState workspace) {
+        return new ProjectUpdateResponse(
+                DEMO_PROJECT_ID,
+                workspace.team().name(),
+                workspace.team().courseName(),
+                workspace.team().description(),
+                workspace.team().startDate(),
+                workspace.team().dueDate(),
+                LocalDateTime.now().toString()
         );
     }
 
@@ -225,39 +308,145 @@ public class ProjectApiController {
         );
     }
 
+    private List<RiskActionOption> riskActions(RiskView risk, WorkspaceState workspace) {
+        var overdueOrDueSoon = firstOpenTaskByDueDate(workspace.tasks());
+        var reassignmentTarget = firstOpenTaskByOwnerLoad(workspace.tasks());
+        var leastLoadedOwner = leastLoadedOwner(workspace);
+
+        return switch ((int) risk.id()) {
+            case 101, 102 -> List.of(
+                    new RiskActionOption(
+                            "RESCHEDULE",
+                            "일정 재조정",
+                            "지연 또는 임박한 태스크의 마감일을 뒤로 조정합니다.",
+                            overdueOrDueSoon == null ? null : overdueOrDueSoon.id(),
+                            null,
+                            overdueOrDueSoon == null ? null : suggestedDueDate(overdueOrDueSoon.dueDate(), 2)),
+                    new RiskActionOption(
+                            "REASSIGN",
+                            "작업 재할당",
+                            "마감 위험이 있는 태스크를 작업량이 적은 팀원에게 재배정합니다.",
+                            overdueOrDueSoon == null ? null : overdueOrDueSoon.id(),
+                            leastLoadedOwner,
+                            null));
+            case 103 -> List.of(
+                    new RiskActionOption(
+                            "UNBLOCK",
+                            "선행 작업 정리",
+                            "블로커를 가진 태스크의 선행 작업을 우선 처리 대상으로 지정합니다.",
+                            overdueOrDueSoon == null ? null : overdueOrDueSoon.id(),
+                            null,
+                            null),
+                    new RiskActionOption(
+                            "SPLIT_TASK",
+                            "작업 분할",
+                            "막힌 작업을 더 작은 실행 단위로 나누어 병렬 진행 가능성을 높입니다.",
+                            overdueOrDueSoon == null ? null : overdueOrDueSoon.id(),
+                            null,
+                            null));
+            case 104 -> List.of(
+                    new RiskActionOption(
+                            "REASSIGN",
+                            "작업 재할당",
+                            "특정 팀원에게 집중된 태스크 일부를 다른 팀원에게 옮깁니다.",
+                            reassignmentTarget == null ? null : reassignmentTarget.id(),
+                            leastLoadedOwner,
+                            null),
+                    new RiskActionOption(
+                            "RESCHEDULE",
+                            "일정 재조정",
+                            "담당자 과부하가 큰 태스크의 마감일을 조정합니다.",
+                            reassignmentTarget == null ? null : reassignmentTarget.id(),
+                            null,
+                            reassignmentTarget == null ? null : suggestedDueDate(reassignmentTarget.dueDate(), 2)));
+            case 105 -> List.of(
+                    new RiskActionOption(
+                            "SCHEDULE_MEETING",
+                            "회의 일정 등록",
+                            "누락된 회의록을 보완하기 위해 동기화 회의를 등록합니다.",
+                            null,
+                            null,
+                            LocalDate.now().plusDays(1).toString()));
+            default -> List.of(
+                    new RiskActionOption(
+                            "REVIEW",
+                            "리스크 검토",
+                            "담당자가 리스크 상태를 확인하고 필요한 대응을 선택합니다.",
+                            null,
+                            null,
+                            null));
+        };
+    }
+
+    private TaskView firstOpenTaskByDueDate(List<TaskView> tasks) {
+        return tasks.stream()
+                .filter(task -> task.status() != TaskStatus.DONE)
+                .min(Comparator.comparing(task -> parseDateOrMax(task.dueDate())))
+                .orElse(null);
+    }
+
+    private TaskView firstOpenTaskByOwnerLoad(List<TaskView> tasks) {
+        var busiestOwner = tasks.stream()
+                .filter(task -> task.status() != TaskStatus.DONE)
+                .collect(java.util.stream.Collectors.groupingBy(TaskView::owner, java.util.stream.Collectors.counting()))
+                .entrySet()
+                .stream()
+                .max(Comparator.comparingLong(entry -> entry.getValue()))
+                .map(Map.Entry::getKey)
+                .orElse(null);
+        if (busiestOwner == null) {
+            return null;
+        }
+        return tasks.stream()
+                .filter(task -> task.status() != TaskStatus.DONE)
+                .filter(task -> task.owner().equals(busiestOwner))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private String leastLoadedOwner(WorkspaceState workspace) {
+        if (workspace.members().isEmpty()) {
+            return null;
+        }
+        var openTaskCounts = workspace.tasks().stream()
+                .filter(task -> task.status() != TaskStatus.DONE)
+                .collect(java.util.stream.Collectors.groupingBy(TaskView::owner, java.util.stream.Collectors.counting()));
+        return workspace.members().stream()
+                .min(Comparator.comparingLong(member -> openTaskCounts.getOrDefault(member.name(), 0L)))
+                .map(member -> member.name())
+                .orElse(null);
+    }
+
+    private String suggestedDueDate(String dueDate, int plusDays) {
+        var parsed = parseDateOrMax(dueDate);
+        if (parsed.equals(LocalDate.MAX)) {
+            parsed = LocalDate.now();
+        }
+        return parsed.plusDays(plusDays).toString();
+    }
+
+    private LocalDate parseDateOrMax(String value) {
+        if (value == null || value.isBlank()) {
+            return LocalDate.MAX;
+        }
+        try {
+            return LocalDate.parse(value);
+        } catch (DateTimeParseException exception) {
+            return LocalDate.MAX;
+        }
+    }
+
     private void requireDemoProject(long projectId) {
         if (projectId != DEMO_PROJECT_ID) {
             throw new IllegalArgumentException("Only demo project 1 is available in the MVP backend.");
         }
     }
 
-    public record ProjectRequest(
-            @NotBlank(message = "Project name is required.")
-            @Size(max = 80, message = "Project name must be 80 characters or fewer.")
-            String name,
-            @NotBlank(message = "Course name is required.")
-            @Size(max = 80, message = "Course name must be 80 characters or fewer.")
-            String courseName,
-            String semester,
-            @NotBlank(message = "Due date is required.")
-            @Pattern(regexp = "\\d{4}-\\d{2}-\\d{2}", message = "Due date must use yyyy-MM-dd.")
-            String dueDate,
-            @NotBlank(message = "Owner name is required.")
-            String ownerName,
-            @NotBlank(message = "Owner email is required.")
-            @Email(message = "Owner email must be valid.")
-            String ownerEmail
-    ) {
+    private String defaultText(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value.trim();
     }
 
-    public record ProjectSummary(
-            long id,
-            String name,
-            String courseName,
-            String semester,
-            String dueDate,
-            int memberCount,
-            int taskCount
-    ) {
+    private String normalizeNullable(String value) {
+        return value == null ? "" : value.trim();
     }
 }

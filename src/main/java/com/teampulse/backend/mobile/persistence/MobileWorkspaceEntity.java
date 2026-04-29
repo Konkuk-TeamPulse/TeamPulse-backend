@@ -35,6 +35,12 @@ public class MobileWorkspaceEntity {
     @Column(name = "user_email", nullable = false, length = 191)
     private String userEmail = "";
 
+    @Column(name = "user_university", nullable = false, length = 80)
+    private String userUniversity = "";
+
+    @Column(name = "user_phone", nullable = false, length = 30)
+    private String userPhone = "";
+
     @Column(name = "team_name", nullable = false, length = 80)
     private String teamName = "";
 
@@ -46,6 +52,12 @@ public class MobileWorkspaceEntity {
 
     @Column(name = "due_date", nullable = false, length = 10)
     private String dueDate = "";
+
+    @Column(length = 500)
+    private String description = "";
+
+    @Column(name = "start_date", nullable = false, length = 10)
+    private String startDate = "";
 
     @Column(name = "invite_code", nullable = false, length = 16)
     private String inviteCode = "";

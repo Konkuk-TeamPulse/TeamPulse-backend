@@ -21,6 +21,19 @@ public record BootstrapWorkspaceRequest(
         String semester,
         @NotBlank(message = "Due date is required.")
         @Pattern(regexp = "\\d{4}-\\d{2}-\\d{2}", message = "Due date must use yyyy-MM-dd.")
-        String dueDate
+        String dueDate,
+        String description,
+        @Pattern(regexp = "^$|\\d{4}-\\d{2}-\\d{2}", message = "Start date must use yyyy-MM-dd.")
+        String startDate
 ) {
+    public BootstrapWorkspaceRequest(
+            String name,
+            String email,
+            String teamName,
+            String courseName,
+            String semester,
+            String dueDate
+    ) {
+        this(name, email, teamName, courseName, semester, dueDate, "", "");
+    }
 }
