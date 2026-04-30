@@ -1,15 +1,21 @@
 package com.teampulse.backend.mobile.api;
 
 import com.teampulse.backend.common.api.ApiResponse;
+import com.teampulse.backend.common.api.SpecResponse;
 import com.teampulse.backend.mobile.application.MobileTaskUseCase;
 import com.teampulse.backend.mobile.application.WorkspaceQueryUseCase;
 import com.teampulse.backend.mobile.dto.CreateTaskRequest;
+import com.teampulse.backend.mobile.dto.MemberView;
+import com.teampulse.backend.mobile.dto.TaskCreateSpecRequest;
+import com.teampulse.backend.mobile.dto.TaskCreateSpecResponse;
 import com.teampulse.backend.mobile.dto.TaskDependencyRequest;
+import com.teampulse.backend.mobile.dto.TaskSummarySpecResponse;
 import com.teampulse.backend.mobile.dto.TaskView;
 import com.teampulse.backend.mobile.dto.UpdateTaskRequest;
 import com.teampulse.backend.mobile.dto.UpdateTaskStatusRequest;
 import com.teampulse.backend.mobile.dto.WorkspaceState;
 import jakarta.validation.Valid;
+import java.util.Comparator;
 import java.util.List;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -25,6 +31,8 @@ import org.springframework.web.bind.annotation.RestController;
 public class ProjectTaskApiController {
 
     private static final long DEMO_PROJECT_ID = 1L;
+    private static final String SUCCESS_MESSAGE = "\uC694\uCCAD\uC5D0 \uC131\uACF5\uD588\uC2B5\uB2C8\uB2E4.";
+    private static final String TASK_CREATED_MESSAGE = "\uD0DC\uC2A4\uD06C\uAC00 \uC0DD\uC131\uB418\uC5C8\uC2B5\uB2C8\uB2E4.";
 
     private final WorkspaceQueryUseCase workspaceQueryUseCase;
     private final MobileTaskUseCase mobileTaskUseCase;
@@ -35,18 +43,40 @@ public class ProjectTaskApiController {
     }
 
     @GetMapping
-    public ApiResponse<List<TaskView>> listTasks(@PathVariable long projectId) {
+    public SpecResponse<List<TaskSummarySpecResponse>> listTasks(@PathVariable long projectId) {
         requireDemoProject(projectId);
-        return ApiResponse.ok(workspaceQueryUseCase.getWorkspace().tasks());
+        var tasks = workspaceQueryUseCase.getWorkspace().tasks().stream()
+                .map(task -> new TaskSummarySpecResponse(
+                        task.id(),
+                        task.title(),
+                        task.status(),
+                        task.owner(),
+                        task.dueDate()))
+                .toList();
+        return SpecResponse.ok(SUCCESS_MESSAGE, tasks);
     }
 
     @PostMapping
-    public ApiResponse<WorkspaceState> createTask(
+    public SpecResponse<TaskCreateSpecResponse> createTask(
             @PathVariable long projectId,
-            @Valid @RequestBody CreateTaskRequest request
+            @Valid @RequestBody TaskCreateSpecRequest request
     ) {
         requireDemoProject(projectId);
-        return ApiResponse.ok(mobileTaskUseCase.createTask(request));
+        var workspace = workspaceQueryUseCase.getWorkspace();
+        var assignee = requireMemberById(workspace, request.assigneeId());
+        var updated = mobileTaskUseCase.createTask(new CreateTaskRequest(
+                request.title(),
+                assignee.name(),
+                request.dueDate(),
+                List.of(),
+                normalizeNullable(request.description())));
+        var task = latestTask(updated);
+        return SpecResponse.ok(TASK_CREATED_MESSAGE, new TaskCreateSpecResponse(
+                task.id(),
+                task.title(),
+                task.status(),
+                assignee.id(),
+                task.dueDate()));
     }
 
     @PatchMapping("/{taskId}")
@@ -93,6 +123,23 @@ public class ProjectTaskApiController {
     ) {
         requireDemoProject(projectId);
         return ApiResponse.ok(mobileTaskUseCase.deleteTaskDependency(taskId, dependencyTitle));
+    }
+
+    private MemberView requireMemberById(WorkspaceState workspace, long memberId) {
+        return workspace.members().stream()
+                .filter(member -> member.id() == memberId)
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Assignee not found."));
+    }
+
+    private TaskView latestTask(WorkspaceState workspace) {
+        return workspace.tasks().stream()
+                .max(Comparator.comparingLong(TaskView::id))
+                .orElseThrow(() -> new IllegalArgumentException("Task not found."));
+    }
+
+    private String normalizeNullable(String value) {
+        return value == null ? "" : value.trim();
     }
 
     private void requireDemoProject(long projectId) {

@@ -21,6 +21,20 @@ public record CreateMeetingRequest(
         List<String> decisions,
         List<String> actions,
         String actionOwner,
-        boolean createTasks
+        boolean createTasks,
+        String content,
+        List<Long> attendeeIds,
+        List<MeetingActionItemView> actionItems
 ) {
+    public CreateMeetingRequest(
+            String title,
+            String time,
+            String agenda,
+            List<String> decisions,
+            List<String> actions,
+            String actionOwner,
+            boolean createTasks
+    ) {
+        this(title, time, agenda, decisions, actions, actionOwner, createTasks, "", List.of(), List.of());
+    }
 }

@@ -30,6 +30,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class JpaWorkspaceService implements WorkspaceService {
 
     private static final DateTimeFormatter TIMESTAMP_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+    private static final String ACTION_ITEM_SEPARATOR = "\u001F";
     private final MobileWorkspaceRepository workspaceRepository;
     private final RiskEngine riskEngine;
 
@@ -49,10 +50,14 @@ public class JpaWorkspaceService implements WorkspaceService {
         workspace.setInitialized(false);
         workspace.setUserName("");
         workspace.setUserEmail("");
+        workspace.setUserUniversity("");
+        workspace.setUserPhone("");
         workspace.setTeamName("");
         workspace.setCourseName("");
         workspace.setSemester("2026-1");
         workspace.setDueDate("");
+        workspace.setDescription("");
+        workspace.setStartDate("");
         workspace.setInviteCode(inviteCode());
         workspace.getMembers().clear();
         workspace.getTasks().clear();
@@ -70,15 +75,20 @@ public class JpaWorkspaceService implements WorkspaceService {
         requireText(request.courseName(), "Course name is required.");
         requireText(request.dueDate(), "Due date is required.");
         validateLocalDate(request.dueDate(), "Due date must use a real yyyy-MM-dd date.");
+        validateOptionalLocalDate(request.startDate(), "Start date must use a real yyyy-MM-dd date.");
 
         var workspace = getOrCreateWorkspace();
         workspace.setInitialized(true);
         workspace.setUserName(request.name().trim());
         workspace.setUserEmail(request.email().trim());
+        workspace.setUserUniversity("");
+        workspace.setUserPhone("");
         workspace.setTeamName(request.teamName().trim());
         workspace.setCourseName(request.courseName().trim());
         workspace.setSemester(defaultText(request.semester(), "2026-1"));
         workspace.setDueDate(request.dueDate().trim());
+        workspace.setDescription(defaultText(request.description(), ""));
+        workspace.setStartDate(defaultText(request.startDate(), ""));
         workspace.setInviteCode(inviteCode());
         workspace.getMembers().clear();
         workspace.getTasks().clear();
@@ -97,10 +107,14 @@ public class JpaWorkspaceService implements WorkspaceService {
         workspace.setInitialized(true);
         workspace.setUserName("Kim");
         workspace.setUserEmail("leader@teampulse.app");
+        workspace.setUserUniversity("Konkuk University");
+        workspace.setUserPhone("010-0000-0000");
         workspace.setTeamName("TeamPulse");
         workspace.setCourseName("AI Coding Tool");
         workspace.setSemester("2026-1");
         workspace.setDueDate("2026-04-12");
+        workspace.setDescription("TeamPulse demo project");
+        workspace.setStartDate("2026-04-01");
         workspace.setInviteCode(inviteCode());
         workspace.getMembers().clear();
         workspace.getTasks().clear();
@@ -119,7 +133,10 @@ public class JpaWorkspaceService implements WorkspaceService {
                 "2026-04-07T19:00",
                 "Finalize task split and report scope.",
                 List.of("Use TeamPulse as assignment app."),
-                List.of("Wire frontend to backend")));
+                List.of("Wire frontend to backend"),
+                "",
+                List.of(),
+                List.of()));
         workspace.getActivities().add(activity(workspace, "System", "Sample workspace loaded."));
         workspace.getActivities().add(activity(workspace, "Kim", "Week 6 planning meeting saved."));
         workspace.getActivities().add(activity(workspace, "Kim", "Read AI coding tool guide task completed."));
@@ -135,8 +152,34 @@ public class JpaWorkspaceService implements WorkspaceService {
         validateLocalDate(request.dueDate(), "Task due date must use a real yyyy-MM-dd date.");
         requireExistingMember(workspace, request.owner(), "Task owner must be an existing team member.");
 
-        workspace.getTasks().add(task(workspace, request.title().trim(), request.owner().trim(), request.dueDate().trim(), safeList(request.blockers()), TaskStatus.TODO));
+        workspace.getTasks().add(task(
+                workspace,
+                request.title().trim(),
+                request.owner().trim(),
+                request.dueDate().trim(),
+                safeList(request.blockers()),
+                TaskStatus.TODO,
+                defaultText(request.note(), "Created in assignment2 workspace flow.")));
         workspace.getActivities().add(activity(workspace, workspace.getUserName(), request.title().trim() + " created."));
+        return persistAndProject(workspace);
+    }
+
+    @Override
+    public WorkspaceState updateAccount(UpdateAccountRequest request) {
+        var workspace = requireInitializedWorkspace();
+        if (request.name() != null && !request.name().isBlank()) {
+            workspace.setUserName(request.name().trim());
+        }
+        if (request.email() != null && !request.email().isBlank()) {
+            workspace.setUserEmail(request.email().trim());
+        }
+        if (request.university() != null) {
+            workspace.setUserUniversity(request.university().trim());
+        }
+        if (request.phone() != null) {
+            workspace.setUserPhone(request.phone().trim());
+        }
+        workspace.getActivities().add(activity(workspace, workspace.getUserName(), "Account profile updated."));
         return persistAndProject(workspace);
     }
 
@@ -243,7 +286,10 @@ public class JpaWorkspaceService implements WorkspaceService {
                 request.time().trim(),
                 request.agenda().trim(),
                 safeList(request.decisions()),
-                safeList(request.actions())));
+                safeList(request.actions()),
+                defaultText(request.content(), ""),
+                safeLongList(request.attendeeIds()),
+                safeActionItems(request.actionItems())));
 
         if (request.createTasks()) {
             var actionOwner = defaultText(request.actionOwner(), firstMemberName(workspace));
@@ -272,11 +318,14 @@ public class JpaWorkspaceService implements WorkspaceService {
         requireText(request.courseName(), "Course name is required.");
         requireText(request.dueDate(), "Team due date is required.");
         validateLocalDate(request.dueDate(), "Team due date must use a real yyyy-MM-dd date.");
+        validateOptionalLocalDate(request.startDate(), "Team start date must use a real yyyy-MM-dd date.");
 
         workspace.setTeamName(request.name().trim());
         workspace.setCourseName(request.courseName().trim());
         workspace.setSemester(defaultText(request.semester(), workspace.getSemester()));
         workspace.setDueDate(request.dueDate().trim());
+        workspace.setDescription(defaultText(request.description(), workspace.getDescription()));
+        workspace.setStartDate(defaultText(request.startDate(), workspace.getStartDate()));
         workspace.getActivities().add(activity(workspace, workspace.getUserName(), "Team profile updated."));
         return persistAndProject(workspace);
     }
@@ -380,8 +429,11 @@ public class JpaWorkspaceService implements WorkspaceService {
                         meeting.getTitle(),
                         meeting.getTime(),
                         meeting.getAgenda(),
+                        defaultText(meeting.getContent(), ""),
                         safeList(meeting.getDecisions()),
-                        safeList(meeting.getActions())))
+                        safeList(meeting.getActions()),
+                        parseLongList(meeting.getAttendeeIds()),
+                        decodeActionItems(meeting.getActionItems())))
                 .toList();
 
         var activities = workspace.getActivities().stream()
@@ -396,13 +448,19 @@ public class JpaWorkspaceService implements WorkspaceService {
 
         return new WorkspaceState(
                 workspace.isInitialized(),
-                new UserProfile(workspace.getUserName(), workspace.getUserEmail()),
+                new UserProfile(
+                        workspace.getUserName(),
+                        workspace.getUserEmail(),
+                        workspace.getUserUniversity(),
+                        workspace.getUserPhone()),
                 new TeamProfile(
                         workspace.getTeamName(),
                         workspace.getCourseName(),
                         workspace.getSemester(),
                         workspace.getDueDate(),
-                        workspace.getInviteCode()),
+                        workspace.getInviteCode(),
+                        workspace.getDescription(),
+                        workspace.getStartDate()),
                 List.copyOf(members),
                 List.copyOf(tasks),
                 List.copyOf(meetings),
@@ -435,6 +493,18 @@ public class JpaWorkspaceService implements WorkspaceService {
             List<String> blockers,
             TaskStatus status
     ) {
+        return task(workspace, title, owner, dueDate, blockers, status, "Created in assignment2 workspace flow.");
+    }
+
+    private MobileTaskEntity task(
+            MobileWorkspaceEntity workspace,
+            String title,
+            String owner,
+            String dueDate,
+            List<String> blockers,
+            TaskStatus status,
+            String note
+    ) {
         var task = new MobileTaskEntity();
         task.setWorkspace(workspace);
         task.setTitle(title);
@@ -444,7 +514,7 @@ public class JpaWorkspaceService implements WorkspaceService {
         task.setPriority(blockers.isEmpty() ? "MEDIUM" : "HIGH");
         task.setBlockers(List.copyOf(blockers));
         task.setNext(List.of());
-        task.setNote("Created in assignment2 workspace flow.");
+        task.setNote(note);
         return task;
     }
 
@@ -454,15 +524,21 @@ public class JpaWorkspaceService implements WorkspaceService {
             String time,
             String agenda,
             List<String> decisions,
-            List<String> actions
+            List<String> actions,
+            String content,
+            List<Long> attendeeIds,
+            List<MeetingActionItemView> actionItems
     ) {
         var meeting = new MobileMeetingEntity();
         meeting.setWorkspace(workspace);
         meeting.setTitle(title);
         meeting.setTime(time);
         meeting.setAgenda(agenda);
+        meeting.setContent(defaultText(content, ""));
         meeting.setDecisions(List.copyOf(decisions));
         meeting.setActions(List.copyOf(actions));
+        meeting.setAttendeeIds(attendeeIds.stream().map(String::valueOf).toList());
+        meeting.setActionItems(encodeActionItems(actionItems));
         return meeting;
     }
 
@@ -490,6 +566,57 @@ public class JpaWorkspaceService implements WorkspaceService {
             return List.of();
         }
         return source.stream().filter(item -> item != null && !item.isBlank()).map(String::trim).toList();
+    }
+
+    private List<Long> safeLongList(List<Long> source) {
+        if (source == null) {
+            return List.of();
+        }
+        return source.stream().filter(item -> item != null && item > 0).toList();
+    }
+
+    private List<MeetingActionItemView> safeActionItems(List<MeetingActionItemView> source) {
+        if (source == null) {
+            return List.of();
+        }
+        return source.stream()
+                .filter(item -> item != null && item.content() != null && !item.content().isBlank())
+                .map(item -> new MeetingActionItemView(item.content().trim(), item.assigneeId(), defaultText(item.dueDate(), "")))
+                .toList();
+    }
+
+    private List<String> encodeActionItems(List<MeetingActionItemView> source) {
+        return safeActionItems(source).stream()
+                .map(item -> String.join(
+                        ACTION_ITEM_SEPARATOR,
+                        item.content(),
+                        item.assigneeId() == null ? "" : String.valueOf(item.assigneeId()),
+                        defaultText(item.dueDate(), "")))
+                .toList();
+    }
+
+    private List<MeetingActionItemView> decodeActionItems(List<String> source) {
+        if (source == null) {
+            return List.of();
+        }
+        return source.stream()
+                .filter(item -> item != null && !item.isBlank())
+                .map(item -> item.split(ACTION_ITEM_SEPARATOR, -1))
+                .map(parts -> new MeetingActionItemView(
+                        parts.length > 0 ? parts[0] : "",
+                        parts.length > 1 && !parts[1].isBlank() ? Long.valueOf(parts[1]) : null,
+                        parts.length > 2 ? parts[2] : ""))
+                .toList();
+    }
+
+    private List<Long> parseLongList(List<String> source) {
+        if (source == null) {
+            return List.of();
+        }
+        return source.stream()
+                .filter(item -> item != null && !item.isBlank())
+                .map(Long::valueOf)
+                .toList();
     }
 
     private String plusDays(String value, int days) {
@@ -520,6 +647,13 @@ public class JpaWorkspaceService implements WorkspaceService {
 
     private void validateLocalDate(String value, String message) {
         parseLocalDate(value, message);
+    }
+
+    private void validateOptionalLocalDate(String value, String message) {
+        if (value == null || value.isBlank()) {
+            return;
+        }
+        validateLocalDate(value, message);
     }
 
     private void validateMeetingTime(String value, String message) {

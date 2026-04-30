@@ -1,5 +1,11 @@
 package com.teampulse.backend.common.config;
 
+import com.teampulse.backend.auth.infrastructure.DemoAccessTokenAuthenticationFilter;
+import com.teampulse.backend.common.api.SpecResponse;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
@@ -9,7 +15,11 @@ import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.http.MediaType;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -18,13 +28,20 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 public class SecurityConfig {
 
     @Bean
-    SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    SecurityFilterChain securityFilterChain(
+            HttpSecurity http,
+            DemoAccessTokenAuthenticationFilter demoAccessTokenAuthenticationFilter,
+            ObjectMapper objectMapper
+    ) throws Exception {
         http
                 .csrf(AbstractHttpConfigurer::disable)
                 .cors(Customizer.withDefaults())
                 .httpBasic(AbstractHttpConfigurer::disable)
                 .formLogin(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .exceptionHandling(exception -> exception
+                        .authenticationEntryPoint((request, response, authException) -> writeAuthenticationRequired(response, objectMapper))
+                        .accessDeniedHandler((request, response, accessDeniedException) -> writeAuthenticationRequired(response, objectMapper)))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
                                 "/api/health",
@@ -33,13 +50,27 @@ public class SecurityConfig {
                                 "/api/mobile/**",
                                 "/api/auth/**",
                                 "/api/account",
+                                "/api/account/**",
                                 "/api/projects/**",
                                 "/api/invitations/**"
                         )
                         .permitAll()
                         .anyRequest()
-                        .authenticated());
+                        .authenticated())
+                .addFilterBefore(demoAccessTokenAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
+    }
+
+    private void writeAuthenticationRequired(HttpServletResponse response, ObjectMapper objectMapper) throws IOException {
+        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        objectMapper.writeValue(response.getWriter(), SpecResponse.fail(3001, "로그인이 필요합니다.", null));
+    }
+
+    @Bean
+    PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
     }
 
     @Bean
