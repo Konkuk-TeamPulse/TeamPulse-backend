@@ -40,6 +40,9 @@ public class MobileMeetingEntity {
     @Column(nullable = false, columnDefinition = "text")
     private String agenda;
 
+    @Column(nullable = false, columnDefinition = "text")
+    private String content = "";
+
     @Convert(converter = StringListJsonConverter.class)
     @Column(nullable = false, columnDefinition = "text")
     private List<String> decisions = List.of();
@@ -47,4 +50,12 @@ public class MobileMeetingEntity {
     @Convert(converter = StringListJsonConverter.class)
     @Column(nullable = false, columnDefinition = "text")
     private List<String> actions = List.of();
+
+    @Convert(converter = StringListJsonConverter.class)
+    @Column(nullable = false, columnDefinition = "text")
+    private List<String> attendeeIds = List.of();
+
+    @Convert(converter = StringListJsonConverter.class)
+    @Column(nullable = false, columnDefinition = "text")
+    private List<String> actionItems = List.of();
 }

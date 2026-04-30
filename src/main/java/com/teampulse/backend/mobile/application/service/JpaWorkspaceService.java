@@ -30,6 +30,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class JpaWorkspaceService implements WorkspaceService {
 
     private static final DateTimeFormatter TIMESTAMP_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+    private static final String ACTION_ITEM_SEPARATOR = "\u001F";
     private final MobileWorkspaceRepository workspaceRepository;
     private final RiskEngine riskEngine;
 
@@ -132,7 +133,10 @@ public class JpaWorkspaceService implements WorkspaceService {
                 "2026-04-07T19:00",
                 "Finalize task split and report scope.",
                 List.of("Use TeamPulse as assignment app."),
-                List.of("Wire frontend to backend")));
+                List.of("Wire frontend to backend"),
+                "",
+                List.of(),
+                List.of()));
         workspace.getActivities().add(activity(workspace, "System", "Sample workspace loaded."));
         workspace.getActivities().add(activity(workspace, "Kim", "Week 6 planning meeting saved."));
         workspace.getActivities().add(activity(workspace, "Kim", "Read AI coding tool guide task completed."));
@@ -282,7 +286,10 @@ public class JpaWorkspaceService implements WorkspaceService {
                 request.time().trim(),
                 request.agenda().trim(),
                 safeList(request.decisions()),
-                safeList(request.actions())));
+                safeList(request.actions()),
+                defaultText(request.content(), ""),
+                safeLongList(request.attendeeIds()),
+                safeActionItems(request.actionItems())));
 
         if (request.createTasks()) {
             var actionOwner = defaultText(request.actionOwner(), firstMemberName(workspace));
@@ -422,8 +429,11 @@ public class JpaWorkspaceService implements WorkspaceService {
                         meeting.getTitle(),
                         meeting.getTime(),
                         meeting.getAgenda(),
+                        defaultText(meeting.getContent(), ""),
                         safeList(meeting.getDecisions()),
-                        safeList(meeting.getActions())))
+                        safeList(meeting.getActions()),
+                        parseLongList(meeting.getAttendeeIds()),
+                        decodeActionItems(meeting.getActionItems())))
                 .toList();
 
         var activities = workspace.getActivities().stream()
@@ -514,15 +524,21 @@ public class JpaWorkspaceService implements WorkspaceService {
             String time,
             String agenda,
             List<String> decisions,
-            List<String> actions
+            List<String> actions,
+            String content,
+            List<Long> attendeeIds,
+            List<MeetingActionItemView> actionItems
     ) {
         var meeting = new MobileMeetingEntity();
         meeting.setWorkspace(workspace);
         meeting.setTitle(title);
         meeting.setTime(time);
         meeting.setAgenda(agenda);
+        meeting.setContent(defaultText(content, ""));
         meeting.setDecisions(List.copyOf(decisions));
         meeting.setActions(List.copyOf(actions));
+        meeting.setAttendeeIds(attendeeIds.stream().map(String::valueOf).toList());
+        meeting.setActionItems(encodeActionItems(actionItems));
         return meeting;
     }
 
@@ -550,6 +566,57 @@ public class JpaWorkspaceService implements WorkspaceService {
             return List.of();
         }
         return source.stream().filter(item -> item != null && !item.isBlank()).map(String::trim).toList();
+    }
+
+    private List<Long> safeLongList(List<Long> source) {
+        if (source == null) {
+            return List.of();
+        }
+        return source.stream().filter(item -> item != null && item > 0).toList();
+    }
+
+    private List<MeetingActionItemView> safeActionItems(List<MeetingActionItemView> source) {
+        if (source == null) {
+            return List.of();
+        }
+        return source.stream()
+                .filter(item -> item != null && item.content() != null && !item.content().isBlank())
+                .map(item -> new MeetingActionItemView(item.content().trim(), item.assigneeId(), defaultText(item.dueDate(), "")))
+                .toList();
+    }
+
+    private List<String> encodeActionItems(List<MeetingActionItemView> source) {
+        return safeActionItems(source).stream()
+                .map(item -> String.join(
+                        ACTION_ITEM_SEPARATOR,
+                        item.content(),
+                        item.assigneeId() == null ? "" : String.valueOf(item.assigneeId()),
+                        defaultText(item.dueDate(), "")))
+                .toList();
+    }
+
+    private List<MeetingActionItemView> decodeActionItems(List<String> source) {
+        if (source == null) {
+            return List.of();
+        }
+        return source.stream()
+                .filter(item -> item != null && !item.isBlank())
+                .map(item -> item.split(ACTION_ITEM_SEPARATOR, -1))
+                .map(parts -> new MeetingActionItemView(
+                        parts.length > 0 ? parts[0] : "",
+                        parts.length > 1 && !parts[1].isBlank() ? Long.valueOf(parts[1]) : null,
+                        parts.length > 2 ? parts[2] : ""))
+                .toList();
+    }
+
+    private List<Long> parseLongList(List<String> source) {
+        if (source == null) {
+            return List.of();
+        }
+        return source.stream()
+                .filter(item -> item != null && !item.isBlank())
+                .map(Long::valueOf)
+                .toList();
     }
 
     private String plusDays(String value, int days) {

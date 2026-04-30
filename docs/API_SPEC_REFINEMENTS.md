@@ -177,7 +177,7 @@ MVP behavior:
 Result:
 
 ```text
-Tests run: 10, Failures: 0, Errors: 0, Skipped: 0
+Tests run: 21, Failures: 0, Errors: 0, Skipped: 0
 BUILD SUCCESS
 ```
 
@@ -190,7 +190,7 @@ Signup focused test:
 Result:
 
 ```text
-Tests run: 3, Failures: 0, Errors: 0, Skipped: 0
+Tests run: 10, Failures: 0, Errors: 0, Skipped: 0
 BUILD SUCCESS
 ```
 
@@ -273,8 +273,14 @@ Login live smoke test:
 
 ## 남은 고도화
 
-- 로그아웃도 회원가입/로그인과 같은 auth 모듈/명세형 응답 구조로 정리
 - 실제 JWT 인증/인가
 - userId 기반 사용자 활동 필터링
 - 리스크 대응 옵션 실행 API
 - response wrapper를 노션 명세의 `isSuccess`, `responseCode`, `responseMessage`, `result` 구조로 정리
+
+## 2026-04-30 코드 리뷰 후 보완
+
+- 명세형 모바일 API 컨트롤러의 검증 실패와 도메인 오류도 `SpecResponse` 실패 wrapper로 반환하도록 정리했다.
+- 인증 실패는 `responseCode: 3001`, 태스크 자기참조 의존관계는 `responseCode: 3006`으로 반환한다.
+- `GET /api/users/me`는 demo access token이 있으면 토큰에 연결된 사용자 정보를 반환한다.
+- 회의록 생성 시 `content`, `attendeeIds`, `actionItems.assigneeId`, `actionItems.dueDate`가 MeetingView/JPA 엔티티에 보존되도록 보완했다.

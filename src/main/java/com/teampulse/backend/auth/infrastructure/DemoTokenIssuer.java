@@ -8,6 +8,7 @@ import com.teampulse.backend.auth.dto.JwtInfo;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.stereotype.Component;
@@ -18,6 +19,7 @@ public class DemoTokenIssuer implements TokenIssuer, RefreshTokenRegistry, Acces
     private final Set<String> activeRefreshTokens = ConcurrentHashMap.newKeySet();
     private final Set<String> activeAccessTokens = ConcurrentHashMap.newKeySet();
     private final Map<String, String> accessTokenByRefreshToken = new ConcurrentHashMap<>();
+    private final Map<String, AuthUser> userByAccessToken = new ConcurrentHashMap<>();
 
     @Override
     public JwtInfo issue(AuthUser user) {
@@ -29,6 +31,7 @@ public class DemoTokenIssuer implements TokenIssuer, RefreshTokenRegistry, Acces
         activeAccessTokens.add(accessToken);
         activeRefreshTokens.add(refreshToken);
         accessTokenByRefreshToken.put(refreshToken, accessToken);
+        userByAccessToken.put(accessToken, user);
         return new JwtInfo(accessToken, refreshToken);
     }
 
@@ -43,11 +46,20 @@ public class DemoTokenIssuer implements TokenIssuer, RefreshTokenRegistry, Acces
         var accessToken = accessTokenByRefreshToken.remove(refreshToken);
         if (accessToken != null) {
             activeAccessTokens.remove(accessToken);
+            userByAccessToken.remove(accessToken);
         }
     }
 
     @Override
     public boolean isActiveAccessToken(String accessToken) {
         return activeAccessTokens.contains(accessToken);
+    }
+
+    @Override
+    public Optional<AuthUser> findUserByAccessToken(String accessToken) {
+        if (!isActiveAccessToken(accessToken)) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(userByAccessToken.get(accessToken));
     }
 }

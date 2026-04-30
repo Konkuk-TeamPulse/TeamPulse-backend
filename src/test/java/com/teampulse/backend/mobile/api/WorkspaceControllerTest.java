@@ -209,14 +209,36 @@ class WorkspaceControllerTest {
                                 """))
                 .andExpect(status().isOk());
 
+        mockMvc.perform(get("/api/users/me"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.isSuccess").value(false))
+                .andExpect(jsonPath("$.responseCode").value(3001));
+
+        MvcResult signupResult = mockMvc.perform(post("/api/auth/signup")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "email": "me-lookup@example.com",
+                                  "password": "!aaa123123",
+                                  "name": "Account Owner",
+                                  "university": "Konkuk University",
+                                  "phone": "010-9999-0000"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andReturn();
+        String accessToken = JsonPath.read(signupResult.getResponse().getContentAsString(), "$.result.jwtInfo.accessToken");
+
         mockMvc.perform(get("/api/users/me")
-                        .with(user("tester")))
+                        .header("Authorization", accessToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.isSuccess").value(true))
                 .andExpect(jsonPath("$.responseCode").value(1000))
                 .andExpect(jsonPath("$.result.userId").isNumber())
-                .andExpect(jsonPath("$.result.email").value("leader@teampulse.app"))
-                .andExpect(jsonPath("$.result.name").value("Demo Leader"));
+                .andExpect(jsonPath("$.result.email").value("me-lookup@example.com"))
+                .andExpect(jsonPath("$.result.name").value("Account Owner"))
+                .andExpect(jsonPath("$.result.university").value("Konkuk University"))
+                .andExpect(jsonPath("$.result.phone").value("010-9999-0000"));
 
         mockMvc.perform(get("/api/projects/1/dashboard"))
                 .andExpect(status().isOk())
@@ -324,6 +346,19 @@ class WorkspaceControllerTest {
                 .andExpect(jsonPath("$.result.taskId").value(taskId.longValue()))
                 .andExpect(jsonPath("$.result.precedingTaskId").value(precedingTaskId.longValue()));
 
+        mockMvc.perform(post("/api/tasks/{taskId}/dependencies", taskId.longValue())
+                        .with(user("tester"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "precedingTaskId": %d
+                                }
+                                """.formatted(taskId.longValue())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.isSuccess").value(false))
+                .andExpect(jsonPath("$.responseCode").value(3006))
+                .andExpect(jsonPath("$.responseMessage").value("자기 자신을 선행 태스크로 설정할 수 없습니다."));
+
         mockMvc.perform(delete("/api/tasks/{taskId}/dependencies/{dependencyId}", taskId.longValue(), precedingTaskId.longValue())
                         .with(user("tester")))
                 .andExpect(status().isOk())
@@ -430,13 +465,21 @@ class WorkspaceControllerTest {
                 .andExpect(jsonPath("$.isSuccess").value(true))
                 .andExpect(jsonPath("$.responseCode").value(1000))
                 .andExpect(jsonPath("$.result[0].meetingId").value(meetingId.longValue()))
-                .andExpect(jsonPath("$.result[0].title").value("Weekly Sync"));
+                .andExpect(jsonPath("$.result[0].title").value("Weekly Sync"))
+                .andExpect(jsonPath("$.result[0].content").value("Discuss remaining in-progress APIs"))
+                .andExpect(jsonPath("$.result[0].attendeeIds[0]").value(1))
+                .andExpect(jsonPath("$.result[0].actionItems[0].content").value("Implement meeting APIs"))
+                .andExpect(jsonPath("$.result[0].actionItems[0].assigneeId").value(1))
+                .andExpect(jsonPath("$.result[0].actionItems[0].dueDate").value("2026-04-30"));
 
         mockMvc.perform(get("/api/projects/1/meetings/{meetingId}", meetingId.longValue()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.isSuccess").value(true))
                 .andExpect(jsonPath("$.responseCode").value(1000))
                 .andExpect(jsonPath("$.result.meetingId").value(meetingId.longValue()))
-                .andExpect(jsonPath("$.result.actions[0]").value("Implement meeting APIs"));
+                .andExpect(jsonPath("$.result.actions[0]").value("Implement meeting APIs"))
+                .andExpect(jsonPath("$.result.content").value("Discuss remaining in-progress APIs"))
+                .andExpect(jsonPath("$.result.attendeeIds[0]").value(1))
+                .andExpect(jsonPath("$.result.actionItems[0].assigneeId").value(1));
     }
 }

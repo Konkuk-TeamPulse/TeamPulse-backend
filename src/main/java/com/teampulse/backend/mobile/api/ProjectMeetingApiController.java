@@ -4,6 +4,7 @@ import com.teampulse.backend.common.api.SpecResponse;
 import com.teampulse.backend.mobile.application.MobileMeetingUseCase;
 import com.teampulse.backend.mobile.application.WorkspaceQueryUseCase;
 import com.teampulse.backend.mobile.dto.CreateMeetingRequest;
+import com.teampulse.backend.mobile.dto.MeetingActionItemView;
 import com.teampulse.backend.mobile.dto.MeetingCreateSpecRequest;
 import com.teampulse.backend.mobile.dto.MeetingCreateSpecResponse;
 import com.teampulse.backend.mobile.dto.MeetingSpecResponse;
@@ -12,7 +13,6 @@ import com.teampulse.backend.mobile.dto.WorkspaceState;
 import jakarta.validation.Valid;
 import java.util.Comparator;
 import java.util.List;
-import java.util.stream.Stream;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -84,18 +84,22 @@ public class ProjectMeetingApiController {
                 : request.actionItems().stream()
                 .map(MeetingCreateSpecRequest.ActionItemRequest::content)
                 .toList();
-        var agenda = Stream.of(request.agenda(), request.content())
-                .filter(value -> value != null && !value.isBlank())
-                .reduce((left, right) -> left + "\n\n" + right)
-                .orElse(request.agenda());
+        var actionItems = request.actionItems() == null
+                ? List.<MeetingActionItemView>of()
+                : request.actionItems().stream()
+                .map(item -> new MeetingActionItemView(item.content(), item.assigneeId(), item.dueDate()))
+                .toList();
         return new CreateMeetingRequest(
                 request.title(),
                 request.meetingDate(),
-                agenda,
+                request.agenda(),
                 decisions,
                 actions,
                 null,
-                false);
+                false,
+                request.content(),
+                request.attendeeIds(),
+                actionItems);
     }
 
     private void requireDemoProject(long projectId) {

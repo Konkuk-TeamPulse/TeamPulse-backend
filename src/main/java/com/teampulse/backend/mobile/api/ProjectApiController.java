@@ -2,6 +2,7 @@ package com.teampulse.backend.mobile.api;
 
 import com.teampulse.backend.common.api.ApiResponse;
 import com.teampulse.backend.common.api.SpecResponse;
+import com.teampulse.backend.auth.domain.AuthUser;
 import com.teampulse.backend.domain.task.TaskStatus;
 import com.teampulse.backend.domain.team.TeamRole;
 import com.teampulse.backend.mobile.application.MobileAccountUseCase;
@@ -46,6 +47,7 @@ import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -100,9 +102,9 @@ public class ProjectApiController {
     }
 
     @GetMapping("/users/me")
-    public SpecResponse<UserMeResponse> getCurrentUser() {
+    public SpecResponse<UserMeResponse> getCurrentUser(Authentication authentication) {
         var workspace = workspaceQueryUseCase.getWorkspace();
-        return SpecResponse.ok(SUCCESS_MESSAGE, userMe(workspace));
+        return SpecResponse.ok(SUCCESS_MESSAGE, userMe(workspace, authentication));
     }
 
     @GetMapping("/account/activities")
@@ -302,7 +304,16 @@ public class ProjectApiController {
         );
     }
 
-    private UserMeResponse userMe(WorkspaceState workspace) {
+    private UserMeResponse userMe(WorkspaceState workspace, Authentication authentication) {
+        if (authentication != null && authentication.getPrincipal() instanceof AuthUser authUser) {
+            return new UserMeResponse(
+                    authUser.id(),
+                    authUser.email(),
+                    authUser.email(),
+                    authUser.name(),
+                    authUser.university(),
+                    authUser.phone());
+        }
         var leader = workspace.members().stream()
                 .filter(member -> member.name().equalsIgnoreCase(workspace.user().name()))
                 .findFirst();

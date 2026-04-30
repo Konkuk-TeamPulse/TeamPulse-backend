@@ -228,9 +228,11 @@ GET    /api/projects/{projectId}/members
 Implemented behavior:
 
 - Meeting creation now accepts the Notion request shape: `meetingDate`, `agenda`, `content`, `decisions`, `attendeeIds`, and `actionItems`.
+- Meeting records retain `content`, `attendeeIds`, and structured `actionItems` so list/detail responses do not lose the submitted meeting data.
 - Project dashboard returns task summary, schedule summary, member workload, risk summary, and dashboard risk items.
-- Current account lookup returns the standard spec wrapper from `GET /api/users/me`. This API remains authenticated by Spring Security.
+- Current account lookup returns the standard spec wrapper from `GET /api/users/me`. This API remains authenticated by Spring Security and resolves the demo access token user when an `Authorization` header is supplied.
 - Task dependency add/delete now accepts task IDs instead of the earlier MVP title-based dependency API shape.
+- Spec-aligned controllers now return the Notion-style failure wrapper for validation and domain errors.
 - Activity logs now return `logId`, `action`, `content`, `userName`, and `createdAt` through `/activity-logs`.
 - Team member list now returns Notion-style `memberId`, `name`, `email`, and `role`.
 - Team leave now returns a standard success wrapper with a `null` result.
@@ -240,10 +242,12 @@ Main code:
 - `src/main/java/com/teampulse/backend/mobile/api/ProjectApiController.java`
 - `src/main/java/com/teampulse/backend/mobile/api/ProjectMeetingApiController.java`
 - `src/main/java/com/teampulse/backend/mobile/api/TaskApiController.java`
+- `src/main/java/com/teampulse/backend/mobile/api/MobileSpecExceptionHandler.java`
 - `src/main/java/com/teampulse/backend/mobile/dto/UserMeResponse.java`
 - `src/main/java/com/teampulse/backend/mobile/dto/DashboardResponse.java`
 - `src/main/java/com/teampulse/backend/mobile/dto/ActivityLogSpecResponse.java`
 - `src/main/java/com/teampulse/backend/mobile/dto/MemberSpecResponse.java`
+- `src/main/java/com/teampulse/backend/mobile/dto/MeetingActionItemView.java`
 - `src/main/java/com/teampulse/backend/mobile/dto/MeetingCreateSpecRequest.java`
 - `src/main/java/com/teampulse/backend/mobile/dto/MeetingCreateSpecResponse.java`
 - `src/main/java/com/teampulse/backend/mobile/dto/TaskDependencySpecRequest.java`
@@ -324,6 +328,16 @@ Meeting live HTTP smoke test on `http://127.0.0.1:18080`:
 POST /api/projects/1/meetings              -> responseCode 1000
 GET  /api/projects/1/meetings              -> 1 meeting
 GET  /api/projects/1/meetings/{meetingId}  -> responseCode 1000
+```
+
+Review follow-up verification on 2026-04-30:
+
+```text
+GET  /api/users/me without token -> HTTP 401, responseCode 3001
+GET  /api/users/me with demo access token -> token user fields returned
+POST /api/tasks/{taskId}/dependencies with same task id -> HTTP 400, responseCode 3006
+GET  /api/projects/1/meetings -> content, attendeeIds, actionItems retained
+GET  /api/projects/1/meetings/{meetingId} -> action item assignee and due date retained
 ```
 
 ## Remaining Auth Hardening

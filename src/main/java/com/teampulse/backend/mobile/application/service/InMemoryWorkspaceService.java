@@ -278,8 +278,11 @@ public class InMemoryWorkspaceService implements WorkspaceService {
                 request.title().trim(),
                 request.time().trim(),
                 request.agenda().trim(),
+                defaultText(request.content(), ""),
                 safeList(request.decisions()),
-                safeList(request.actions()));
+                safeList(request.actions()),
+                safeLongList(request.attendeeIds()),
+                safeActionItems(request.actionItems()));
 
         var meetings = new ArrayList<>(workspace.meetings());
         meetings.add(0, meeting);
@@ -505,6 +508,23 @@ public class InMemoryWorkspaceService implements WorkspaceService {
             return List.of();
         }
         return source.stream().filter(item -> item != null && !item.isBlank()).map(String::trim).toList();
+    }
+
+    private List<Long> safeLongList(List<Long> source) {
+        if (source == null) {
+            return List.of();
+        }
+        return source.stream().filter(item -> item != null && item > 0).toList();
+    }
+
+    private List<MeetingActionItemView> safeActionItems(List<MeetingActionItemView> source) {
+        if (source == null) {
+            return List.of();
+        }
+        return source.stream()
+                .filter(item -> item != null && item.content() != null && !item.content().isBlank())
+                .map(item -> new MeetingActionItemView(item.content().trim(), item.assigneeId(), defaultText(item.dueDate(), "")))
+                .toList();
     }
 
     private String defaultText(String value, String fallback) {
