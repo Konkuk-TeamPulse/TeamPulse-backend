@@ -122,8 +122,11 @@ public class ProjectApiController {
     }
 
     @PostMapping("/projects")
-    public SpecResponse<ProjectCreateResponse> createProject(@Valid @RequestBody ProjectCreateRequest request) {
-        var currentUser = workspaceQueryUseCase.getWorkspace().user();
+    public SpecResponse<ProjectCreateResponse> createProject(
+            @Valid @RequestBody ProjectCreateRequest request,
+            Authentication authentication
+    ) {
+        var currentUser = currentUser(authentication);
         var workspace = workspaceLifecycleUseCase.bootstrap(new BootstrapWorkspaceRequest(
                 defaultText(currentUser.name(), DEFAULT_OWNER_NAME),
                 defaultText(currentUser.email(), DEFAULT_OWNER_EMAIL),
@@ -228,8 +231,12 @@ public class ProjectApiController {
     }
 
     @PostMapping("/projects/{projectId}/invitations")
-    public SpecResponse<InvitationCreateResponse> createInvitation(@PathVariable long projectId) {
+    public SpecResponse<InvitationCreateResponse> createInvitation(
+            @PathVariable long projectId,
+            Authentication authentication
+    ) {
         requireDemoProject(projectId);
+        requireProjectMember(authentication);
         var workspace = mobileTeamUseCase.regenerateInviteCode();
         return SpecResponse.ok(SUCCESS_MESSAGE, invitationResponse(projectId, workspace.team()));
     }
@@ -344,6 +351,26 @@ public class ProjectApiController {
                 workspace.user().name(),
                 workspace.user().university(),
                 workspace.user().phone());
+    }
+
+    private UserProfile currentUser(Authentication authentication) {
+        if (authentication != null && authentication.getPrincipal() instanceof AuthUser authUser) {
+            return new UserProfile(authUser.name(), authUser.email(), authUser.university(), authUser.phone());
+        }
+        return workspaceQueryUseCase.getWorkspace().user();
+    }
+
+    private void requireProjectMember(Authentication authentication) {
+        if (authentication == null || !(authentication.getPrincipal() instanceof AuthUser authUser)) {
+            throw new IllegalArgumentException("Authentication user is required.");
+        }
+        var workspace = workspaceQueryUseCase.getWorkspace();
+        var isMember = workspace.members().stream()
+                .anyMatch(member -> member.name().equalsIgnoreCase(authUser.name()))
+                || workspace.user().email().equalsIgnoreCase(authUser.email());
+        if (!isMember) {
+            throw new IllegalArgumentException("Current user is not a project member.");
+        }
     }
 
     private DashboardResponse dashboard(WorkspaceState workspace) {

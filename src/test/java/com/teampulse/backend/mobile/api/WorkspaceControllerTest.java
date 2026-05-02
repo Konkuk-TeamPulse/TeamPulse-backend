@@ -359,6 +359,12 @@ class WorkspaceControllerTest {
                 .andExpect(jsonPath("$.result.taskId").value(taskId.longValue()))
                 .andExpect(jsonPath("$.result.precedingTaskId").value(precedingTaskId.longValue()));
 
+        mockMvc.perform(get("/api/projects/1/tasks"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.result[?(@.taskId == %d)].precedingTaskIds[0]".formatted(taskId.longValue()))
+                        .value(hasItem(precedingTaskId.intValue())));
+
         mockMvc.perform(post("/api/tasks/{taskId}/dependencies", taskId.longValue())
                         .with(user("tester"))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -523,7 +529,10 @@ class WorkspaceControllerTest {
         mockMvc.perform(post("/api/mobile/workspace/reset"))
                 .andExpect(status().isOk());
 
+        String leaderToken = issueAccessToken("invitation-leader@example.com", "Invitation Leader");
+
         mockMvc.perform(post("/api/projects")
+                        .header("Authorization", leaderToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -536,7 +545,8 @@ class WorkspaceControllerTest {
                                 """))
                 .andExpect(status().isOk());
 
-        MvcResult invitationResult = mockMvc.perform(post("/api/projects/1/invitations"))
+        MvcResult invitationResult = mockMvc.perform(post("/api/projects/1/invitations")
+                        .header("Authorization", leaderToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.isSuccess").value(true))
                 .andExpect(jsonPath("$.responseCode").value(1000))
@@ -648,17 +658,21 @@ class WorkspaceControllerTest {
     }
 
     private String issueAccessToken(String email) throws Exception {
+        return issueAccessToken(email, "Project List Owner");
+    }
+
+    private String issueAccessToken(String email, String name) throws Exception {
         MvcResult signupResult = mockMvc.perform(post("/api/auth/signup")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
                                   "email": "%s",
                                   "password": "!aaa123123",
-                                  "name": "Project List Owner",
+                                  "name": "%s",
                                   "university": "Konkuk University",
                                   "phone": "010-1234-5678"
                                 }
-                                """.formatted(email)))
+                                """.formatted(email, name)))
                 .andExpect(status().isOk())
                 .andReturn();
         return JsonPath.read(signupResult.getResponse().getContentAsString(), "$.result.jwtInfo.accessToken");
