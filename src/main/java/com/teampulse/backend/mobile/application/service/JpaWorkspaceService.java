@@ -433,7 +433,9 @@ public class JpaWorkspaceService implements WorkspaceService {
                         safeList(meeting.getDecisions()),
                         safeList(meeting.getActions()),
                         parseLongList(meeting.getAttendeeIds()),
-                        decodeActionItems(meeting.getActionItems())))
+                        decodeActionItems(meeting.getActionItems()),
+                        defaultText(meeting.getCreatedAt(), meeting.getTime()),
+                        defaultText(meeting.getUpdatedAt(), defaultText(meeting.getCreatedAt(), meeting.getTime()))))
                 .toList();
 
         var activities = workspace.getActivities().stream()
@@ -539,6 +541,9 @@ public class JpaWorkspaceService implements WorkspaceService {
         meeting.setActions(List.copyOf(actions));
         meeting.setAttendeeIds(attendeeIds.stream().map(String::valueOf).toList());
         meeting.setActionItems(encodeActionItems(actionItems));
+        var now = LocalDateTime.now().withNano(0).toString();
+        meeting.setCreatedAt(now);
+        meeting.setUpdatedAt(now);
         return meeting;
     }
 

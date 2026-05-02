@@ -16,6 +16,7 @@ import com.teampulse.backend.mobile.dto.ActivityLogSpecResponse;
 import com.teampulse.backend.mobile.dto.BootstrapWorkspaceRequest;
 import com.teampulse.backend.mobile.dto.CreateMemberRequest;
 import com.teampulse.backend.mobile.dto.DashboardResponse;
+import com.teampulse.backend.mobile.dto.InvitationCreateResponse;
 import com.teampulse.backend.mobile.dto.MemberView;
 import com.teampulse.backend.mobile.dto.MemberSpecResponse;
 import com.teampulse.backend.mobile.dto.ProjectCreateRequest;
@@ -24,6 +25,8 @@ import com.teampulse.backend.mobile.dto.ProjectDetailView;
 import com.teampulse.backend.mobile.dto.ProjectSummaryView;
 import com.teampulse.backend.mobile.dto.ProjectUpdateRequest;
 import com.teampulse.backend.mobile.dto.ProjectUpdateResponse;
+import com.teampulse.backend.mobile.dto.ReportCreateRequest;
+import com.teampulse.backend.mobile.dto.ReportCreateResponse;
 import com.teampulse.backend.mobile.dto.ReportView;
 import com.teampulse.backend.mobile.dto.RiskActionOption;
 import com.teampulse.backend.mobile.dto.RiskView;
@@ -34,7 +37,9 @@ import com.teampulse.backend.mobile.dto.UpdateTeamRequest;
 import com.teampulse.backend.mobile.dto.UserMeResponse;
 import com.teampulse.backend.mobile.dto.UserProfile;
 import com.teampulse.backend.mobile.dto.WorkspaceState;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -46,7 +51,6 @@ import java.util.Map;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -67,6 +71,7 @@ public class ProjectApiController {
     private static final String DEFAULT_SEMESTER = "2026-1";
     private static final String SUCCESS_MESSAGE = "\uC694\uCCAD\uC5D0 \uC131\uACF5\uD588\uC2B5\uB2C8\uB2E4.";
     private static final String PROJECT_CREATED_MESSAGE = "\uD504\uB85C\uC81D\uD2B8\uAC00 \uC0DD\uC131\uB418\uC5C8\uC2B5\uB2C8\uB2E4.";
+    private static final String REPORT_CREATED_MESSAGE = "\uB9AC\uD3EC\uD2B8\uAC00 \uC0DD\uC131\uB418\uC5C8\uC2B5\uB2C8\uB2E4.";
 
     private final WorkspaceQueryUseCase workspaceQueryUseCase;
     private final WorkspaceLifecycleUseCase workspaceLifecycleUseCase;
@@ -222,6 +227,13 @@ public class ProjectApiController {
         return ApiResponse.ok(invitePayload(workspace.team()));
     }
 
+    @PostMapping("/projects/{projectId}/invitations")
+    public SpecResponse<InvitationCreateResponse> createInvitation(@PathVariable long projectId) {
+        requireDemoProject(projectId);
+        var workspace = mobileTeamUseCase.regenerateInviteCode();
+        return SpecResponse.ok(SUCCESS_MESSAGE, invitationResponse(projectId, workspace.team()));
+    }
+
     @GetMapping("/projects/{projectId}/activities")
     public ApiResponse<List<ActivityView>> listActivities(@PathVariable long projectId) {
         requireDemoProject(projectId);
@@ -254,44 +266,52 @@ public class ProjectApiController {
     }
 
     @PostMapping("/projects/{projectId}/reports")
-    public ApiResponse<WorkspaceState> createReport(@PathVariable long projectId) {
+    public SpecResponse<ReportCreateResponse> createReport(
+            @PathVariable long projectId,
+            @Valid @RequestBody(required = false) ReportCreateRequest request
+    ) {
         requireDemoProject(projectId);
-        return ApiResponse.ok(mobileReportUseCase.generateReport());
+        if (request != null && request.reportType() != null && !request.reportType().isBlank()
+                && !"PDF".equals(request.reportType())) {
+            throw new IllegalArgumentException("Report type must be PDF.");
+        }
+        requireReportable(workspaceQueryUseCase.getWorkspace());
+        var workspace = mobileReportUseCase.generateReport();
+        var report = latestReport(workspace);
+        return SpecResponse.ok(REPORT_CREATED_MESSAGE, new ReportCreateResponse(report.id(), "/api/reports/" + report.id() + "/download"));
     }
 
     @GetMapping("/projects/{projectId}/reports/{reportId}/download")
-    public ResponseEntity<byte[]> downloadReport(@PathVariable long projectId, @PathVariable long reportId) {
+    public void downloadReport(
+            @PathVariable long projectId,
+            @PathVariable long reportId,
+            HttpServletResponse response
+    ) throws IOException {
         requireDemoProject(projectId);
+        writeReportDownloadResponse(reportId, response);
+    }
+
+    @GetMapping("/reports/{reportId}/download")
+    public void downloadReport(@PathVariable long reportId, HttpServletResponse response) throws IOException {
+        writeReportDownloadResponse(reportId, response);
+    }
+
+    private void writeReportDownloadResponse(long reportId, HttpServletResponse response) throws IOException {
         var workspace = workspaceQueryUseCase.getWorkspace();
         var report = workspace.reports().stream()
                 .filter(candidate -> candidate.id() == reportId)
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("Report not found."));
-        var body = """
-                TeamPulse Report
-                Project: %s
-                Range: %s
-                Status: %s
+        var body = reportPdf(workspace, report);
 
-                Tasks: %d
-                Meetings: %d
-                Risks: %d
-                """.formatted(
-                workspace.team().name(),
-                report.range(),
-                report.status(),
-                workspace.tasks().size(),
-                workspace.meetings().size(),
-                workspace.risks().size()
-        ).getBytes(StandardCharsets.UTF_8);
-
-        return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
-                        .filename("teampulse-report-" + reportId + ".txt")
-                        .build()
-                        .toString())
-                .contentType(MediaType.TEXT_PLAIN)
-                .body(body);
+        response.setStatus(HttpServletResponse.SC_OK);
+        response.setHeader(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
+                .filename("teampulse-report.pdf")
+                .build()
+                .toString());
+        response.setHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_PDF_VALUE);
+        response.setContentLength(body.length);
+        response.getOutputStream().write(body);
     }
 
     private ProjectSummaryView projectSummary(WorkspaceState workspace) {
@@ -464,6 +484,95 @@ public class ProjectApiController {
                 "inviteCode", team.inviteCode(),
                 "url", "/invite/" + team.inviteCode()
         );
+    }
+
+    private InvitationCreateResponse invitationResponse(long projectId, TeamProfile team) {
+        return new InvitationCreateResponse(
+                Math.abs((long) team.inviteCode().hashCode()),
+                projectId,
+                team.inviteCode(),
+                "https://teampulse.com/invite/" + team.inviteCode(),
+                LocalDateTime.now().plusDays(7).truncatedTo(ChronoUnit.SECONDS).toString());
+    }
+
+    private void requireReportable(WorkspaceState workspace) {
+        if (workspace.tasks().isEmpty() && workspace.meetings().isEmpty()) {
+            throw new IllegalArgumentException("Report data is insufficient.");
+        }
+    }
+
+    private ReportView latestReport(WorkspaceState workspace) {
+        return workspace.reports().stream()
+                .max(Comparator.comparingLong(ReportView::id))
+                .orElseThrow(() -> new IllegalArgumentException("Report not found."));
+    }
+
+    private byte[] reportPdf(WorkspaceState workspace, ReportView report) {
+        var lines = List.of(
+                "TeamPulse Report",
+                "Project: " + workspace.team().name(),
+                "Range: " + report.range(),
+                "Status: " + report.status(),
+                "Tasks: " + workspace.tasks().size(),
+                "Meetings: " + workspace.meetings().size(),
+                "Risks: " + workspace.risks().size());
+        var stream = new StringBuilder("BT\n/F1 16 Tf\n50 780 Td\n");
+        for (int index = 0; index < lines.size(); index++) {
+            if (index == 1) {
+                stream.append("/F1 11 Tf\n");
+            }
+            if (index > 0) {
+                stream.append("0 -24 Td\n");
+            }
+            stream.append("(").append(pdfText(lines.get(index))).append(") Tj\n");
+        }
+        stream.append("ET");
+        return minimalPdf(stream.toString());
+    }
+
+    private byte[] minimalPdf(String contentStream) {
+        var objects = List.of(
+                "<< /Type /Catalog /Pages 2 0 R >>",
+                "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+                "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+                "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+                "<< /Length " + contentStream.length() + " >>\nstream\n" + contentStream + "\nendstream");
+        var body = new StringBuilder("%PDF-1.4\n");
+        var offsets = new java.util.ArrayList<Integer>();
+        for (int index = 0; index < objects.size(); index++) {
+            offsets.add(body.length());
+            body.append(index + 1).append(" 0 obj\n")
+                    .append(objects.get(index)).append("\n")
+                    .append("endobj\n");
+        }
+        var xrefOffset = body.length();
+        body.append("xref\n0 ").append(objects.size() + 1).append("\n")
+                .append("0000000000 65535 f \n");
+        for (var offset : offsets) {
+            body.append("%010d 00000 n \n".formatted(offset));
+        }
+        body.append("trailer\n<< /Size ").append(objects.size() + 1).append(" /Root 1 0 R >>\n")
+                .append("startxref\n")
+                .append(xrefOffset)
+                .append("\n%%EOF\n");
+        return body.toString().getBytes(StandardCharsets.US_ASCII);
+    }
+
+    private String pdfText(String value) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+        var builder = new StringBuilder();
+        for (var character : value.toCharArray()) {
+            if (character == '(' || character == ')' || character == '\\') {
+                builder.append('\\').append(character);
+            } else if (character >= 32 && character <= 126) {
+                builder.append(character);
+            } else {
+                builder.append('?');
+            }
+        }
+        return builder.toString();
     }
 
     private List<RiskActionOption> riskActions(RiskView risk, WorkspaceState workspace) {
