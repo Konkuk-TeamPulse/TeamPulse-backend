@@ -58,4 +58,10 @@ public class MobileMeetingEntity {
     @Convert(converter = StringListJsonConverter.class)
     @Column(nullable = false, columnDefinition = "text")
     private List<String> actionItems = List.of();
+
+    @Column(nullable = false, length = 32)
+    private String createdAt = "";
+
+    @Column(nullable = false, length = 32)
+    private String updatedAt = "";
 }

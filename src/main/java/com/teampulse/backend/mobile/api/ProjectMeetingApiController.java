@@ -39,8 +39,9 @@ public class ProjectMeetingApiController {
     @GetMapping
     public SpecResponse<List<MeetingSpecResponse>> listMeetings(@PathVariable long projectId) {
         requireDemoProject(projectId);
-        var meetings = workspaceQueryUseCase.getWorkspace().meetings().stream()
-                .map(MeetingSpecResponse::from)
+        var workspace = workspaceQueryUseCase.getWorkspace();
+        var meetings = workspace.meetings().stream()
+                .map(meeting -> MeetingSpecResponse.from(meeting, workspace.user().name()))
                 .toList();
         return SpecResponse.ok(SUCCESS_MESSAGE, meetings);
     }
@@ -66,7 +67,7 @@ public class ProjectMeetingApiController {
                 .filter(candidate -> candidate.id() == meetingId)
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("Meeting not found."));
-        return SpecResponse.ok(SUCCESS_MESSAGE, MeetingSpecResponse.from(meeting));
+        return SpecResponse.ok(SUCCESS_MESSAGE, MeetingSpecResponse.from(meeting, workspaceQueryUseCase.getWorkspace().user().name()));
     }
 
     private MeetingView latestMeeting(WorkspaceState workspace) {

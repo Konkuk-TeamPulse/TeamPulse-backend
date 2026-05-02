@@ -13,6 +13,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice(assignableTypes = {
         ProjectApiController.class,
         ProjectMeetingApiController.class,
+        MeetingApiController.class,
+        InvitationApiController.class,
         ProjectTaskApiController.class,
         TaskApiController.class
 })
@@ -48,6 +50,12 @@ public class MobileSpecExceptionHandler {
         if ("Meeting not found.".equals(message)) {
             return 4005;
         }
+        if ("Report data is insufficient.".equals(message)) {
+            return 3007;
+        }
+        if ("Report not found.".equals(message)) {
+            return 4006;
+        }
         if (message != null && message.contains("project 1")) {
             return 3002;
         }
@@ -57,6 +65,9 @@ public class MobileSpecExceptionHandler {
     private String responseMessage(String message) {
         if ("Task cannot depend on itself.".equals(message)) {
             return "자기 자신을 선행 태스크로 설정할 수 없습니다.";
+        }
+        if ("Report data is insufficient.".equals(message)) {
+            return "\uB9AC\uD3EC\uD2B8\uB97C \uC0DD\uC131\uD560 \uD65C\uB3D9 \uAE30\uB85D\uC774 \uBD80\uC871\uD569\uB2C8\uB2E4.";
         }
         return message == null || message.isBlank() ? VALIDATION_MESSAGE : message;
     }

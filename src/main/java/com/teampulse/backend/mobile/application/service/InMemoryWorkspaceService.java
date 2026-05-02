@@ -273,6 +273,7 @@ public class InMemoryWorkspaceService implements WorkspaceService {
         requireText(request.agenda(), "Meeting agenda is required.");
         validateMeetingTime(request.time(), "Meeting time must use a real yyyy-MM-dd or yyyy-MM-ddTHH:mm value.");
 
+        var now = LocalDateTime.now().withNano(0).toString();
         var meeting = new MeetingView(
                 nextId(),
                 request.title().trim(),
@@ -282,7 +283,9 @@ public class InMemoryWorkspaceService implements WorkspaceService {
                 safeList(request.decisions()),
                 safeList(request.actions()),
                 safeLongList(request.attendeeIds()),
-                safeActionItems(request.actionItems()));
+                safeActionItems(request.actionItems()),
+                now,
+                now);
 
         var meetings = new ArrayList<>(workspace.meetings());
         meetings.add(0, meeting);

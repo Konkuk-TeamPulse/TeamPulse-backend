@@ -11,6 +11,8 @@ import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -19,7 +21,6 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.http.MediaType;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -43,6 +44,10 @@ public class SecurityConfig {
                         .authenticationEntryPoint((request, response, authException) -> writeAuthenticationRequired(response, objectMapper))
                         .accessDeniedHandler((request, response, accessDeniedException) -> writeAuthenticationRequired(response, objectMapper)))
                 .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(HttpMethod.GET, "/api/projects")
+                        .authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/invitations/*/accept")
+                        .authenticated()
                         .requestMatchers(
                                 "/api/health",
                                 "/api/roadmap",
@@ -65,7 +70,7 @@ public class SecurityConfig {
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-        objectMapper.writeValue(response.getWriter(), SpecResponse.fail(3001, "로그인이 필요합니다.", null));
+        objectMapper.writeValue(response.getWriter(), SpecResponse.fail(3001, "\uB85C\uADF8\uC778\uC774 \uD544\uC694\uD569\uB2C8\uB2E4.", null));
     }
 
     @Bean
