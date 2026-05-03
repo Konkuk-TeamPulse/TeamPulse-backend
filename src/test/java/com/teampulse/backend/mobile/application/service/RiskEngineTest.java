@@ -21,7 +21,7 @@ class RiskEngineTest {
     ));
 
     @Test
-    void derivesOverdueDueSoonBlockedAndConcentrationRisks() {
+    void derivesStructuralProjectRisksWithoutScoringPeople() {
         var tasks = List.of(
                 task(1, "ERD", "Lee", TaskStatus.TODO, "2026-04-20", List.of(), List.of()),
                 task(2, "API", "Lee", TaskStatus.DOING, "2026-04-25", List.of("ERD"), List.of()),
@@ -35,7 +35,19 @@ class RiskEngineTest {
         ));
 
         assertThat(risks).extracting(RiskView::id).contains(101L, 102L, 103L, 104L, 105L);
+        assertThat(risks).extracting(RiskView::title)
+                .contains("진행 정체", "일정 지연 위험", "병목 구간", "역할 편중", "업데이트 부족");
         assertThat(risks).extracting(RiskView::severity).contains(RiskSeverity.CRITICAL, RiskSeverity.WARNING, RiskSeverity.INFO);
+        assertThat(risks).extracting(RiskView::body)
+                .allSatisfy(body -> assertThat(body).doesNotContain("점수", "평가", "기여도"));
+
+        assertThat(riskById(risks, 101).affectedTaskIds()).containsExactly(1L, 3L);
+        assertThat(riskById(risks, 102).affectedTaskIds()).containsExactly(1L, 2L, 3L);
+        assertThat(riskById(risks, 103).affectedTaskIds()).containsExactly(2L);
+        assertThat(riskById(risks, 104).affectedTaskIds()).containsExactly(1L, 2L, 3L);
+        assertThat(riskById(risks, 105).affectedTaskIds()).containsExactly(1L, 2L, 3L);
+        assertThat(risks).allSatisfy(risk -> assertThat(risk.suggestedActions()).isNotEmpty());
+        assertThat(riskById(risks, 104).suggestedActions()).contains("작업 재할당");
     }
 
     @Test
@@ -49,5 +61,12 @@ class RiskEngineTest {
 
     private TaskView task(long id, String title, String owner, TaskStatus status, String dueDate, List<String> blockers, List<String> next) {
         return new TaskView(id, title, owner, status, dueDate, "MEDIUM", blockers, next, "");
+    }
+
+    private RiskView riskById(List<RiskView> risks, long id) {
+        return risks.stream()
+                .filter(risk -> risk.id() == id)
+                .findFirst()
+                .orElseThrow();
     }
 }

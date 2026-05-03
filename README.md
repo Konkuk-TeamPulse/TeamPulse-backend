@@ -40,6 +40,33 @@ mvn test
 - `POST /api/mobile/members`
 - `DELETE /api/mobile/members/{memberId}`
 
+노션 API 명세와 맞춘 경로도 함께 제공한다. 기존 모바일 API는 하위 호환용으로 유지한다.
+
+- `POST /api/auth/signup`
+- `POST /api/auth/login`
+- `POST /api/auth/logout`
+- `POST /api/projects`
+- `GET /api/projects`
+- `GET /api/projects/{projectId}`
+- `PATCH /api/projects/{projectId}`
+- `POST /api/projects/{projectId}/tasks`
+- `GET /api/projects/{projectId}/tasks`
+- `PATCH /api/tasks/{taskId}`
+- `DELETE /api/tasks/{taskId}`
+- `PATCH /api/tasks/{taskId}/status`
+- `POST /api/projects/{projectId}/meetings`
+- `GET /api/projects/{projectId}/meetings`
+- `GET /api/projects/{projectId}/meetings/{meetingId}`
+- `GET /api/projects/{projectId}/dashboard`
+- `GET /api/users/me`
+- `POST /api/tasks/{taskId}/dependencies`
+- `DELETE /api/tasks/{taskId}/dependencies/{dependencyId}`
+- `GET /api/projects/{projectId}/activity-logs`
+- `DELETE /api/projects/{projectId}/members/me`
+- `GET /api/projects/{projectId}/members`
+
+명세형 API의 성공/실패 응답은 `isSuccess`, `responseCode`, `responseMessage`, `result` wrapper를 사용한다. 현재 MVP는 `projectId=1` 단일 프로젝트와 demo access token 기준이다.
+
 ## 구조
 
 - `mobile.api`: 현재 프론트와 연결되는 REST 컨트롤러
@@ -69,6 +96,7 @@ mvn test
 다음 항목을 로컬에서 확인했다.
 
 - `mvn test -Dspring.profiles.active=demo` 통과
+- `.\mvnw.cmd test '-Dspring.profiles.active=demo'` 통과
 - 로컬 서버 `spring-boot:run`, demo profile, `18080` 포트 기동 확인
 - `GET /api/health`
 - `GET /api/mobile/workspace`

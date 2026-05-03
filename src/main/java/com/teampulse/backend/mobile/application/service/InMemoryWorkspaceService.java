@@ -46,6 +46,7 @@ public class InMemoryWorkspaceService implements WorkspaceService {
         requireText(request.courseName(), "Course name is required.");
         requireText(request.dueDate(), "Due date is required.");
         validateLocalDate(request.dueDate(), "Due date must use a real yyyy-MM-dd date.");
+        validateOptionalLocalDate(request.startDate(), "Start date must use a real yyyy-MM-dd date.");
 
         var leader = new MemberView(nextId(), request.name().trim(), TeamRole.LEADER);
         var members = new ArrayList<>(List.of(leader));
@@ -59,7 +60,9 @@ public class InMemoryWorkspaceService implements WorkspaceService {
                         request.courseName().trim(),
                         defaultText(request.semester(), "2026-1"),
                         request.dueDate().trim(),
-                        inviteCode()),
+                        inviteCode(),
+                        defaultText(request.description(), ""),
+                        defaultText(request.startDate(), "")),
                 members,
                 new ArrayList<>(),
                 new ArrayList<>(),
@@ -112,9 +115,65 @@ public class InMemoryWorkspaceService implements WorkspaceService {
         requireExistingMember(request.owner(), "Task owner must be an existing team member.");
 
         var tasks = new ArrayList<>(workspace.tasks());
-        tasks.add(0, task(request.title().trim(), request.owner().trim(), request.dueDate().trim(), safeList(request.blockers()), TaskStatus.TODO));
+        tasks.add(0, task(
+                request.title().trim(),
+                request.owner().trim(),
+                request.dueDate().trim(),
+                safeList(request.blockers()),
+                TaskStatus.TODO,
+                defaultText(request.note(), "Created in assignment2 workspace flow.")));
 
         var activities = prependActivity(workspace.activities(), activity(workspace.user().name(), request.title().trim() + " created."));
+        workspace = copy(workspace, tasks, workspace.meetings(), activities, workspace.reports(), workspace.members(), workspace.team());
+        return recompute();
+    }
+
+    public synchronized WorkspaceState updateAccount(UpdateAccountRequest request) {
+        ensureInitialized();
+        var current = workspace.user();
+        var user = new UserProfile(
+                defaultText(request.name(), current.name()),
+                defaultText(request.email(), current.email()),
+                defaultText(request.university(), current.university()),
+                defaultText(request.phone(), current.phone()));
+        var activities = prependActivity(workspace.activities(), activity(user.name(), "Account profile updated."));
+        workspace = copy(workspace, user, workspace.tasks(), workspace.meetings(), activities, workspace.reports(), workspace.members(), workspace.team());
+        return recompute();
+    }
+
+    public synchronized WorkspaceState updateTask(long taskId, UpdateTaskRequest request) {
+        ensureInitialized();
+
+        var tasks = new ArrayList<TaskView>();
+        TaskView target = null;
+        for (var task : workspace.tasks()) {
+            if (task.id() == taskId) {
+                var owner = defaultText(request.owner(), task.owner());
+                requireExistingMember(owner, "Task owner must be an existing team member.");
+                var dueDate = defaultText(request.dueDate(), task.dueDate());
+                validateLocalDate(dueDate, "Task due date must use a real yyyy-MM-dd date.");
+
+                target = new TaskView(
+                        task.id(),
+                        defaultText(request.title(), task.title()),
+                        owner.trim(),
+                        request.status() == null ? task.status() : request.status(),
+                        dueDate.trim(),
+                        defaultText(request.priority(), task.priority()),
+                        request.blockers() == null ? task.blockers() : safeList(request.blockers()),
+                        request.next() == null ? task.next() : safeList(request.next()),
+                        defaultText(request.note(), task.note()));
+                tasks.add(target);
+            } else {
+                tasks.add(task);
+            }
+        }
+
+        if (target == null) {
+            throw new IllegalArgumentException("Task not found.");
+        }
+
+        var activities = prependActivity(workspace.activities(), activity(workspace.user().name(), target.title() + " updated."));
         workspace = copy(workspace, tasks, workspace.meetings(), activities, workspace.reports(), workspace.members(), workspace.team());
         return recompute();
     }
@@ -158,6 +217,55 @@ public class InMemoryWorkspaceService implements WorkspaceService {
         return recompute();
     }
 
+    public synchronized WorkspaceState addTaskDependency(long taskId, TaskDependencyRequest request) {
+        ensureInitialized();
+        requireText(request.title(), "Dependency title is required.");
+        var dependency = request.title().trim();
+        var tasks = new ArrayList<TaskView>();
+        TaskView target = null;
+        for (var task : workspace.tasks()) {
+            if (task.id() == taskId) {
+                var blockers = new ArrayList<>(task.blockers());
+                if (!blockers.contains(dependency)) {
+                    blockers.add(dependency);
+                }
+                target = new TaskView(task.id(), task.title(), task.owner(), task.status(), task.dueDate(), task.priority(), blockers, task.next(), task.note());
+                tasks.add(target);
+            } else {
+                tasks.add(task);
+            }
+        }
+        if (target == null) {
+            throw new IllegalArgumentException("Task not found.");
+        }
+        var activities = prependActivity(workspace.activities(), activity(workspace.user().name(), "Dependency added to " + target.title() + "."));
+        workspace = copy(workspace, tasks, workspace.meetings(), activities, workspace.reports(), workspace.members(), workspace.team());
+        return recompute();
+    }
+
+    public synchronized WorkspaceState deleteTaskDependency(long taskId, String dependencyTitle) {
+        ensureInitialized();
+        requireText(dependencyTitle, "Dependency title is required.");
+        var tasks = new ArrayList<TaskView>();
+        TaskView target = null;
+        for (var task : workspace.tasks()) {
+            if (task.id() == taskId) {
+                var blockers = new ArrayList<>(task.blockers());
+                blockers.removeIf(blocker -> blocker.equalsIgnoreCase(dependencyTitle.trim()));
+                target = new TaskView(task.id(), task.title(), task.owner(), task.status(), task.dueDate(), task.priority(), blockers, task.next(), task.note());
+                tasks.add(target);
+            } else {
+                tasks.add(task);
+            }
+        }
+        if (target == null) {
+            throw new IllegalArgumentException("Task not found.");
+        }
+        var activities = prependActivity(workspace.activities(), activity(workspace.user().name(), "Dependency removed from " + target.title() + "."));
+        workspace = copy(workspace, tasks, workspace.meetings(), activities, workspace.reports(), workspace.members(), workspace.team());
+        return recompute();
+    }
+
     public synchronized WorkspaceState createMeeting(CreateMeetingRequest request) {
         ensureInitialized();
         requireText(request.title(), "Meeting title is required.");
@@ -165,13 +273,19 @@ public class InMemoryWorkspaceService implements WorkspaceService {
         requireText(request.agenda(), "Meeting agenda is required.");
         validateMeetingTime(request.time(), "Meeting time must use a real yyyy-MM-dd or yyyy-MM-ddTHH:mm value.");
 
+        var now = LocalDateTime.now().withNano(0).toString();
         var meeting = new MeetingView(
                 nextId(),
                 request.title().trim(),
                 request.time().trim(),
                 request.agenda().trim(),
+                defaultText(request.content(), ""),
                 safeList(request.decisions()),
-                safeList(request.actions()));
+                safeList(request.actions()),
+                safeLongList(request.attendeeIds()),
+                safeActionItems(request.actionItems()),
+                now,
+                now);
 
         var meetings = new ArrayList<>(workspace.meetings());
         meetings.add(0, meeting);
@@ -205,13 +319,16 @@ public class InMemoryWorkspaceService implements WorkspaceService {
         requireText(request.courseName(), "Course name is required.");
         requireText(request.dueDate(), "Team due date is required.");
         validateLocalDate(request.dueDate(), "Team due date must use a real yyyy-MM-dd date.");
+        validateOptionalLocalDate(request.startDate(), "Team start date must use a real yyyy-MM-dd date.");
 
         var team = new TeamProfile(
                 request.name().trim(),
                 request.courseName().trim(),
                 defaultText(request.semester(), workspace.team().semester()),
                 request.dueDate().trim(),
-                workspace.team().inviteCode());
+                workspace.team().inviteCode(),
+                defaultText(request.description(), workspace.team().description()),
+                defaultText(request.startDate(), workspace.team().startDate()));
 
         var activities = prependActivity(workspace.activities(), activity(workspace.user().name(), "Team profile updated."));
         workspace = copy(workspace, workspace.tasks(), workspace.meetings(), activities, workspace.reports(), workspace.members(), team);
@@ -225,7 +342,9 @@ public class InMemoryWorkspaceService implements WorkspaceService {
                 workspace.team().courseName(),
                 workspace.team().semester(),
                 workspace.team().dueDate(),
-                inviteCode());
+                inviteCode(),
+                workspace.team().description(),
+                workspace.team().startDate());
 
         var activities = prependActivity(workspace.activities(), activity(workspace.user().name(), "Invite code regenerated."));
         workspace = copy(workspace, workspace.tasks(), workspace.meetings(), activities, workspace.reports(), workspace.members(), team);
@@ -308,9 +427,22 @@ public class InMemoryWorkspaceService implements WorkspaceService {
             List<MemberView> members,
             TeamProfile team
     ) {
+        return copy(current, current.user(), tasks, meetings, activities, reports, members, team);
+    }
+
+    private WorkspaceState copy(
+            WorkspaceState current,
+            UserProfile user,
+            List<TaskView> tasks,
+            List<MeetingView> meetings,
+            List<ActivityView> activities,
+            List<ReportView> reports,
+            List<MemberView> members,
+            TeamProfile team
+    ) {
         return new WorkspaceState(
                 current.initialized(),
-                current.user(),
+                user,
                 team,
                 new ArrayList<>(members),
                 new ArrayList<>(tasks),
@@ -334,6 +466,10 @@ public class InMemoryWorkspaceService implements WorkspaceService {
     }
 
     private TaskView task(String title, String owner, String dueDate, List<String> blockers, TaskStatus status) {
+        return task(title, owner, dueDate, blockers, status, "Created in assignment2 workspace flow.");
+    }
+
+    private TaskView task(String title, String owner, String dueDate, List<String> blockers, TaskStatus status, String note) {
         return new TaskView(
                 nextId(),
                 title,
@@ -343,7 +479,7 @@ public class InMemoryWorkspaceService implements WorkspaceService {
                 blockers.isEmpty() ? "MEDIUM" : "HIGH",
                 List.copyOf(blockers),
                 List.of(),
-                "Created in assignment2 workspace flow.");
+                note);
     }
 
     private ActivityView activity(String actor, String summary) {
@@ -377,6 +513,23 @@ public class InMemoryWorkspaceService implements WorkspaceService {
         return source.stream().filter(item -> item != null && !item.isBlank()).map(String::trim).toList();
     }
 
+    private List<Long> safeLongList(List<Long> source) {
+        if (source == null) {
+            return List.of();
+        }
+        return source.stream().filter(item -> item != null && item > 0).toList();
+    }
+
+    private List<MeetingActionItemView> safeActionItems(List<MeetingActionItemView> source) {
+        if (source == null) {
+            return List.of();
+        }
+        return source.stream()
+                .filter(item -> item != null && item.content() != null && !item.content().isBlank())
+                .map(item -> new MeetingActionItemView(item.content().trim(), item.assigneeId(), defaultText(item.dueDate(), "")))
+                .toList();
+    }
+
     private String defaultText(String value, String fallback) {
         return value == null || value.isBlank() ? fallback : value.trim();
     }
@@ -403,6 +556,13 @@ public class InMemoryWorkspaceService implements WorkspaceService {
 
     private void validateLocalDate(String value, String message) {
         parseLocalDate(value, message);
+    }
+
+    private void validateOptionalLocalDate(String value, String message) {
+        if (value == null || value.isBlank()) {
+            return;
+        }
+        validateLocalDate(value, message);
     }
 
     private void validateMeetingTime(String value, String message) {
