@@ -17,6 +17,8 @@ import com.teampulse.backend.mobile.dto.WorkspaceState;
 import jakarta.validation.Valid;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -45,13 +47,17 @@ public class ProjectTaskApiController {
     @GetMapping
     public SpecResponse<List<TaskSummarySpecResponse>> listTasks(@PathVariable long projectId) {
         requireDemoProject(projectId);
-        var tasks = workspaceQueryUseCase.getWorkspace().tasks().stream()
+        var workspace = workspaceQueryUseCase.getWorkspace();
+        var taskIdsByTitle = workspace.tasks().stream()
+                .collect(Collectors.groupingBy(TaskView::title, Collectors.mapping(TaskView::id, Collectors.toList())));
+        var tasks = workspace.tasks().stream()
                 .map(task -> new TaskSummarySpecResponse(
                         task.id(),
                         task.title(),
                         task.status(),
                         task.owner(),
-                        task.dueDate()))
+                        task.dueDate(),
+                        precedingTaskIds(task, taskIdsByTitle)))
                 .toList();
         return SpecResponse.ok(SUCCESS_MESSAGE, tasks);
     }
@@ -140,6 +146,14 @@ public class ProjectTaskApiController {
 
     private String normalizeNullable(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    private List<Long> precedingTaskIds(TaskView task, Map<String, List<Long>> taskIdsByTitle) {
+        return task.blockers().stream()
+                .flatMap(blocker -> taskIdsByTitle.getOrDefault(blocker, List.of()).stream())
+                .filter(taskId -> taskId != task.id())
+                .distinct()
+                .toList();
     }
 
     private void requireDemoProject(long projectId) {

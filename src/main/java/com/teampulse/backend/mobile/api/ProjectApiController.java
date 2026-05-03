@@ -122,8 +122,11 @@ public class ProjectApiController {
     }
 
     @PostMapping("/projects")
-    public SpecResponse<ProjectCreateResponse> createProject(@Valid @RequestBody ProjectCreateRequest request) {
-        var currentUser = workspaceQueryUseCase.getWorkspace().user();
+    public SpecResponse<ProjectCreateResponse> createProject(
+            @Valid @RequestBody ProjectCreateRequest request,
+            Authentication authentication
+    ) {
+        var currentUser = currentUser(authentication);
         var workspace = workspaceLifecycleUseCase.bootstrap(new BootstrapWorkspaceRequest(
                 defaultText(currentUser.name(), DEFAULT_OWNER_NAME),
                 defaultText(currentUser.email(), DEFAULT_OWNER_EMAIL),
@@ -221,15 +224,23 @@ public class ProjectApiController {
     }
 
     @PostMapping("/projects/{projectId}/invite-links")
-    public ApiResponse<Map<String, Object>> createInviteLink(@PathVariable long projectId) {
+    public ApiResponse<Map<String, Object>> createInviteLink(
+            @PathVariable long projectId,
+            Authentication authentication
+    ) {
         requireDemoProject(projectId);
+        requireProjectMember(authentication);
         var workspace = mobileTeamUseCase.regenerateInviteCode();
         return ApiResponse.ok(invitePayload(workspace.team()));
     }
 
     @PostMapping("/projects/{projectId}/invitations")
-    public SpecResponse<InvitationCreateResponse> createInvitation(@PathVariable long projectId) {
+    public SpecResponse<InvitationCreateResponse> createInvitation(
+            @PathVariable long projectId,
+            Authentication authentication
+    ) {
         requireDemoProject(projectId);
+        requireProjectMember(authentication);
         var workspace = mobileTeamUseCase.regenerateInviteCode();
         return SpecResponse.ok(SUCCESS_MESSAGE, invitationResponse(projectId, workspace.team()));
     }
@@ -346,6 +357,26 @@ public class ProjectApiController {
                 workspace.user().phone());
     }
 
+    private UserProfile currentUser(Authentication authentication) {
+        if (authentication != null && authentication.getPrincipal() instanceof AuthUser authUser) {
+            return new UserProfile(authUser.name(), authUser.email(), authUser.university(), authUser.phone());
+        }
+        return workspaceQueryUseCase.getWorkspace().user();
+    }
+
+    private void requireProjectMember(Authentication authentication) {
+        if (authentication == null || !(authentication.getPrincipal() instanceof AuthUser authUser)) {
+            throw new IllegalArgumentException("Authentication user is required.");
+        }
+        var workspace = workspaceQueryUseCase.getWorkspace();
+        var isMember = workspace.members().stream()
+                .anyMatch(member -> member.name().equalsIgnoreCase(authUser.name()))
+                || workspace.user().email().equalsIgnoreCase(authUser.email());
+        if (!isMember) {
+            throw new IllegalArgumentException("Current user is not a project member.");
+        }
+    }
+
     private DashboardResponse dashboard(WorkspaceState workspace) {
         var tasks = workspace.tasks();
         var doneCount = (int) tasks.stream().filter(task -> task.status() == TaskStatus.DONE).count();
@@ -386,7 +417,7 @@ public class ProjectApiController {
                 .toList();
 
         var dashboardRisks = workspace.risks().stream()
-                .map(this::dashboardRisk)
+                .map(risk -> dashboardRisk(risk, workspace))
                 .toList();
         var dangerCount = (int) dashboardRisks.stream().filter(risk -> risk.level().equals("DANGER")).count();
         var warningCount = (int) dashboardRisks.stream().filter(risk -> risk.level().equals("WARNING")).count();
@@ -408,22 +439,23 @@ public class ProjectApiController {
                 dashboardRisks);
     }
 
-    private DashboardResponse.DashboardRisk dashboardRisk(RiskView risk) {
+    private DashboardResponse.DashboardRisk dashboardRisk(RiskView risk, WorkspaceState workspace) {
         var level = switch (risk.severity()) {
             case CRITICAL -> "DANGER";
             case WARNING -> "WARNING";
             case INFO -> "CAUTION";
         };
+        var relatedTask = firstAffectedTask(risk, workspace.tasks());
         return new DashboardResponse.DashboardRisk(
                 risk.title().toUpperCase().replace(' ', '_'),
                 level,
                 risk.body(),
+                relatedTask == null ? null : relatedTask.id(),
+                relatedTask == null ? null : relatedTask.title(),
                 null,
                 null,
-                null,
-                null,
-                List.of(),
-                List.of(risk.action()));
+                risk.affectedTaskIds(),
+                risk.suggestedActions());
     }
 
     private long remainingDays(String projectEndDate, LocalDate today) {
@@ -576,8 +608,9 @@ public class ProjectApiController {
     }
 
     private List<RiskActionOption> riskActions(RiskView risk, WorkspaceState workspace) {
-        var overdueOrDueSoon = firstOpenTaskByDueDate(workspace.tasks());
-        var reassignmentTarget = firstOpenTaskByOwnerLoad(workspace.tasks());
+        var affectedTask = firstAffectedTask(risk, workspace.tasks());
+        var overdueOrDueSoon = affectedTask == null ? firstOpenTaskByDueDate(workspace.tasks()) : affectedTask;
+        var reassignmentTarget = affectedTask == null ? firstOpenTaskByOwnerLoad(workspace.tasks()) : affectedTask;
         var leastLoadedOwner = leastLoadedOwner(workspace);
 
         return switch ((int) risk.id()) {
@@ -643,6 +676,17 @@ public class ProjectApiController {
                             null,
                             null));
         };
+    }
+
+    private TaskView firstAffectedTask(RiskView risk, List<TaskView> tasks) {
+        for (var affectedTaskId : risk.affectedTaskIds()) {
+            for (var task : tasks) {
+                if (task.id() == affectedTaskId) {
+                    return task;
+                }
+            }
+        }
+        return null;
     }
 
     private TaskView firstOpenTaskByDueDate(List<TaskView> tasks) {
