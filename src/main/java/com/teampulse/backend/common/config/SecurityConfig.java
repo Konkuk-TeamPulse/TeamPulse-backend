@@ -46,6 +46,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.GET, "/api/projects")
                         .authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/projects/*/invitations", "/api/projects/*/invite-links")
+                        .authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/invitations/*/accept")
                         .authenticated()
                         .requestMatchers(

@@ -224,8 +224,12 @@ public class ProjectApiController {
     }
 
     @PostMapping("/projects/{projectId}/invite-links")
-    public ApiResponse<Map<String, Object>> createInviteLink(@PathVariable long projectId) {
+    public ApiResponse<Map<String, Object>> createInviteLink(
+            @PathVariable long projectId,
+            Authentication authentication
+    ) {
         requireDemoProject(projectId);
+        requireProjectMember(authentication);
         var workspace = mobileTeamUseCase.regenerateInviteCode();
         return ApiResponse.ok(invitePayload(workspace.team()));
     }

@@ -545,6 +545,16 @@ class WorkspaceControllerTest {
                                 """))
                 .andExpect(status().isOk());
 
+        mockMvc.perform(post("/api/projects/1/invitations"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.isSuccess").value(false))
+                .andExpect(jsonPath("$.responseCode").value(3001));
+
+        mockMvc.perform(post("/api/projects/1/invite-links"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.isSuccess").value(false))
+                .andExpect(jsonPath("$.responseCode").value(3001));
+
         MvcResult invitationResult = mockMvc.perform(post("/api/projects/1/invitations")
                         .header("Authorization", leaderToken))
                 .andExpect(status().isOk())
