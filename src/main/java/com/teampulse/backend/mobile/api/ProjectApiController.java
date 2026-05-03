@@ -417,7 +417,7 @@ public class ProjectApiController {
                 .toList();
 
         var dashboardRisks = workspace.risks().stream()
-                .map(this::dashboardRisk)
+                .map(risk -> dashboardRisk(risk, workspace))
                 .toList();
         var dangerCount = (int) dashboardRisks.stream().filter(risk -> risk.level().equals("DANGER")).count();
         var warningCount = (int) dashboardRisks.stream().filter(risk -> risk.level().equals("WARNING")).count();
@@ -439,22 +439,23 @@ public class ProjectApiController {
                 dashboardRisks);
     }
 
-    private DashboardResponse.DashboardRisk dashboardRisk(RiskView risk) {
+    private DashboardResponse.DashboardRisk dashboardRisk(RiskView risk, WorkspaceState workspace) {
         var level = switch (risk.severity()) {
             case CRITICAL -> "DANGER";
             case WARNING -> "WARNING";
             case INFO -> "CAUTION";
         };
+        var relatedTask = firstAffectedTask(risk, workspace.tasks());
         return new DashboardResponse.DashboardRisk(
                 risk.title().toUpperCase().replace(' ', '_'),
                 level,
                 risk.body(),
+                relatedTask == null ? null : relatedTask.id(),
+                relatedTask == null ? null : relatedTask.title(),
                 null,
                 null,
-                null,
-                null,
-                List.of(),
-                List.of(risk.action()));
+                risk.affectedTaskIds(),
+                risk.suggestedActions());
     }
 
     private long remainingDays(String projectEndDate, LocalDate today) {
@@ -607,8 +608,9 @@ public class ProjectApiController {
     }
 
     private List<RiskActionOption> riskActions(RiskView risk, WorkspaceState workspace) {
-        var overdueOrDueSoon = firstOpenTaskByDueDate(workspace.tasks());
-        var reassignmentTarget = firstOpenTaskByOwnerLoad(workspace.tasks());
+        var affectedTask = firstAffectedTask(risk, workspace.tasks());
+        var overdueOrDueSoon = affectedTask == null ? firstOpenTaskByDueDate(workspace.tasks()) : affectedTask;
+        var reassignmentTarget = affectedTask == null ? firstOpenTaskByOwnerLoad(workspace.tasks()) : affectedTask;
         var leastLoadedOwner = leastLoadedOwner(workspace);
 
         return switch ((int) risk.id()) {
@@ -674,6 +676,17 @@ public class ProjectApiController {
                             null,
                             null));
         };
+    }
+
+    private TaskView firstAffectedTask(RiskView risk, List<TaskView> tasks) {
+        for (var affectedTaskId : risk.affectedTaskIds()) {
+            for (var task : tasks) {
+                if (task.id() == affectedTaskId) {
+                    return task;
+                }
+            }
+        }
+        return null;
     }
 
     private TaskView firstOpenTaskByDueDate(List<TaskView> tasks) {

@@ -116,6 +116,12 @@ class WorkspaceControllerTest {
                 .andExpect(jsonPath("$.data[0].actor").value("Lee Juho"))
                 .andExpect(jsonPath("$.data[0].updatedAt").exists());
 
+        mockMvc.perform(get("/api/projects/1/risks"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data[0].affectedTaskIds").isArray())
+                .andExpect(jsonPath("$.data[0].suggestedActions").isArray());
+
         mockMvc.perform(get("/api/projects/1/risks/101/actions"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].type").value("RESCHEDULE"));
