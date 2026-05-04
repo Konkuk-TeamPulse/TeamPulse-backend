@@ -2,8 +2,10 @@ package com.teampulse.backend.auth.api;
 
 import com.teampulse.backend.auth.application.AuthUserNotFoundException;
 import com.teampulse.backend.auth.application.DuplicateEmailException;
+import com.teampulse.backend.auth.application.InvalidCredentialsException;
 import com.teampulse.backend.auth.application.InvalidPasswordException;
 import com.teampulse.backend.auth.application.InvalidRefreshTokenException;
+import com.teampulse.backend.auth.application.TooManyLoginAttemptsException;
 import com.teampulse.backend.common.api.SpecResponse;
 import java.util.List;
 import org.springframework.core.Ordered;
@@ -20,6 +22,8 @@ public class AuthExceptionHandler {
     private static final String DUPLICATE_EMAIL_MESSAGE = "\uC911\uBCF5\uB41C \uC774\uBA54\uC77C\uC785\uB2C8\uB2E4.";
     private static final String USER_NOT_FOUND_MESSAGE = "\uC874\uC7AC\uD558\uC9C0 \uC54A\uB294 \uD68C\uC6D0\uC785\uB2C8\uB2E4.";
     private static final String INVALID_PASSWORD_MESSAGE = "\uBE44\uBC00\uBC88\uD638\uAC00 \uC77C\uCE58\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.";
+    private static final String INVALID_CREDENTIALS_MESSAGE = "이메일 또는 비밀번호가 올바르지 않습니다.";
+    private static final String TOO_MANY_LOGIN_ATTEMPTS_MESSAGE = "로그인 시도가 너무 많습니다. 잠시 후 다시 시도해주세요.";
     private static final String VALIDATION_MESSAGE = "\uC694\uCCAD \uAC12\uC774 \uC798\uBABB\uB418\uC5C8\uC2B5\uB2C8\uB2E4.";
 
     @ExceptionHandler(DuplicateEmailException.class)
@@ -30,14 +34,26 @@ public class AuthExceptionHandler {
 
     @ExceptionHandler(AuthUserNotFoundException.class)
     public ResponseEntity<SpecResponse<Void>> handleUserNotFound(AuthUserNotFoundException exception) {
-        return ResponseEntity.status(404)
-                .body(SpecResponse.fail(2013, USER_NOT_FOUND_MESSAGE, null));
+        return ResponseEntity.status(401)
+                .body(SpecResponse.fail(2014, INVALID_CREDENTIALS_MESSAGE, null));
     }
 
     @ExceptionHandler(InvalidPasswordException.class)
     public ResponseEntity<SpecResponse<Void>> handleInvalidPassword(InvalidPasswordException exception) {
         return ResponseEntity.status(401)
-                .body(SpecResponse.fail(2014, INVALID_PASSWORD_MESSAGE, null));
+                .body(SpecResponse.fail(2014, INVALID_CREDENTIALS_MESSAGE, null));
+    }
+
+    @ExceptionHandler(InvalidCredentialsException.class)
+    public ResponseEntity<SpecResponse<Void>> handleInvalidCredentials(InvalidCredentialsException exception) {
+        return ResponseEntity.status(401)
+                .body(SpecResponse.fail(2014, INVALID_CREDENTIALS_MESSAGE, null));
+    }
+
+    @ExceptionHandler(TooManyLoginAttemptsException.class)
+    public ResponseEntity<SpecResponse<Void>> handleTooManyLoginAttempts(TooManyLoginAttemptsException exception) {
+        return ResponseEntity.status(429)
+                .body(SpecResponse.fail(2015, TOO_MANY_LOGIN_ATTEMPTS_MESSAGE, null));
     }
 
     @ExceptionHandler(InvalidRefreshTokenException.class)

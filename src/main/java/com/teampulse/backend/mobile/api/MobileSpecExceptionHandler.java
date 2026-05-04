@@ -25,8 +25,14 @@ public class MobileSpecExceptionHandler {
 
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<SpecResponse<Void>> handleIllegalArgument(IllegalArgumentException exception) {
-        return ResponseEntity.badRequest()
-                .body(SpecResponse.fail(responseCode(exception.getMessage()), responseMessage(exception.getMessage()), null));
+        var message = exception.getMessage();
+        var status = switch (message == null ? "" : message) {
+            case "Authentication user is required." -> 401;
+            case "Project leader permission is required.", "Current user is not a project member." -> 403;
+            default -> 400;
+        };
+        return ResponseEntity.status(status)
+                .body(SpecResponse.fail(responseCode(message), responseMessage(message), null));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -64,6 +70,15 @@ public class MobileSpecExceptionHandler {
         if ("Report not found.".equals(message)) {
             return 4006;
         }
+        if ("Project leader permission is required.".equals(message)) {
+            return 3008;
+        }
+        if ("Current user is not a project member.".equals(message)) {
+            return 3008;
+        }
+        if ("Authentication user is required.".equals(message)) {
+            return 3001;
+        }
         if (message != null && message.contains("project 1")) {
             return 3002;
         }
@@ -79,6 +94,15 @@ public class MobileSpecExceptionHandler {
         }
         if ("Report data is insufficient.".equals(message)) {
             return "리포트를 생성할 활동 기록이 부족합니다.";
+        }
+        if ("Project leader permission is required.".equals(message)) {
+            return "프로젝트 팀장 권한이 필요합니다.";
+        }
+        if ("Current user is not a project member.".equals(message)) {
+            return "프로젝트 접근 권한이 없습니다.";
+        }
+        if ("Authentication user is required.".equals(message)) {
+            return "로그인이 필요합니다.";
         }
         return message == null || message.isBlank() ? VALIDATION_MESSAGE : message;
     }

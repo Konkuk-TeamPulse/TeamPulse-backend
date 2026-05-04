@@ -14,8 +14,6 @@ import com.teampulse.backend.mobile.dto.BootstrapWorkspaceRequest;
 import com.teampulse.backend.mobile.dto.CreateMemberRequest;
 import com.teampulse.backend.mobile.dto.DashboardResponse;
 import com.teampulse.backend.mobile.dto.InvitationCreateResponse;
-import com.teampulse.backend.mobile.dto.MeetingActionItemView;
-import com.teampulse.backend.mobile.dto.MeetingView;
 import com.teampulse.backend.mobile.dto.MemberView;
 import com.teampulse.backend.mobile.dto.MemberSpecResponse;
 import com.teampulse.backend.mobile.dto.ProjectCreateRequest;
@@ -36,10 +34,10 @@ import com.teampulse.backend.mobile.dto.UpdateTeamRequest;
 import com.teampulse.backend.mobile.dto.UserMeResponse;
 import com.teampulse.backend.mobile.dto.UserProfile;
 import com.teampulse.backend.mobile.dto.WorkspaceState;
+import com.teampulse.backend.mobile.report.ReportPdfService;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeParseException;
@@ -74,15 +72,18 @@ public class ProjectApiController {
     private final WorkspaceQueryUseCase workspaceQueryUseCase;
     private final ProjectWorkspaceUseCase projectWorkspaceUseCase;
     private final MobileAccountUseCase mobileAccountUseCase;
+    private final ReportPdfService reportPdfService;
 
     public ProjectApiController(
             WorkspaceQueryUseCase workspaceQueryUseCase,
             ProjectWorkspaceUseCase projectWorkspaceUseCase,
-            MobileAccountUseCase mobileAccountUseCase
+            MobileAccountUseCase mobileAccountUseCase,
+            ReportPdfService reportPdfService
     ) {
         this.workspaceQueryUseCase = workspaceQueryUseCase;
         this.projectWorkspaceUseCase = projectWorkspaceUseCase;
         this.mobileAccountUseCase = mobileAccountUseCase;
+        this.reportPdfService = reportPdfService;
     }
 
     @GetMapping("/account")
@@ -148,8 +149,10 @@ public class ProjectApiController {
     @PatchMapping("/projects/{projectId}")
     public SpecResponse<ProjectUpdateResponse> updateProject(
             @PathVariable long projectId,
-            @Valid @RequestBody ProjectUpdateRequest request
+            @Valid @RequestBody ProjectUpdateRequest request,
+            Authentication authentication
     ) {
+        requireLeader(projectId, authentication);
         var workspace = projectWorkspaceUseCase.updateProjectTeam(projectId, new UpdateTeamRequest(
                 request.projectName(),
                 request.subject(),
@@ -177,8 +180,10 @@ public class ProjectApiController {
     @PostMapping("/projects/{projectId}/members")
     public ApiResponse<WorkspaceState> addMember(
             @PathVariable long projectId,
-            @Valid @RequestBody CreateMemberRequest request
+            @Valid @RequestBody CreateMemberRequest request,
+            Authentication authentication
     ) {
+        requireLeader(projectId, authentication);
         return ApiResponse.ok(projectWorkspaceUseCase.addProjectMember(projectId, request));
     }
 
@@ -202,7 +207,12 @@ public class ProjectApiController {
     }
 
     @DeleteMapping("/projects/{projectId}/members/{memberId}")
-    public ApiResponse<WorkspaceState> deleteMember(@PathVariable long projectId, @PathVariable long memberId) {
+    public ApiResponse<WorkspaceState> deleteMember(
+            @PathVariable long projectId,
+            @PathVariable long memberId,
+            Authentication authentication
+    ) {
+        requireLeader(projectId, authentication);
         return ApiResponse.ok(projectWorkspaceUseCase.deleteProjectMember(projectId, memberId));
     }
 
@@ -211,6 +221,7 @@ public class ProjectApiController {
             @PathVariable long projectId,
             Authentication authentication
     ) {
+        requireLeader(projectId, authentication);
         var workspace = projectWorkspaceUseCase.regenerateProjectInviteCode(projectId);
         return ApiResponse.ok(invitePayload(workspace));
     }
@@ -220,6 +231,7 @@ public class ProjectApiController {
             @PathVariable long projectId,
             Authentication authentication
     ) {
+        requireLeader(projectId, authentication);
         var workspace = projectWorkspaceUseCase.regenerateProjectInviteCode(projectId);
         return SpecResponse.ok(SUCCESS_MESSAGE, invitationResponse(projectId, workspace.team()));
     }
@@ -290,7 +302,7 @@ public class ProjectApiController {
                 .filter(candidate -> candidate.id() == reportId)
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("Report not found."));
-        var body = reportPdf(workspace, report);
+        var body = reportPdfService.render(workspace, report);
 
         response.setStatus(HttpServletResponse.SC_OK);
         response.setHeader(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
@@ -313,18 +325,26 @@ public class ProjectApiController {
     }
 
     private TeamRole projectRole(WorkspaceState workspace, Authentication authentication) {
-        if (authentication != null && authentication.getPrincipal() instanceof AuthUser authUser) {
-            if (workspace.user().email().equalsIgnoreCase(authUser.email())) {
-                return TeamRole.LEADER;
-            }
-            return workspace.members().stream()
-                    .filter(member -> member.email().equalsIgnoreCase(authUser.email())
-                            || member.name().equalsIgnoreCase(authUser.name()))
-                    .map(MemberView::role)
-                    .findFirst()
-                    .orElse(TeamRole.MEMBER);
+        if (authentication == null || !(authentication.getPrincipal() instanceof AuthUser authUser)) {
+            throw new IllegalArgumentException("Authentication user is required.");
         }
-        return TeamRole.LEADER;
+        if (workspace.user().email().equalsIgnoreCase(authUser.email())) {
+            return TeamRole.LEADER;
+        }
+        return workspace.members().stream()
+                .filter(member -> member.email().equalsIgnoreCase(authUser.email())
+                        || member.name().equalsIgnoreCase(authUser.name()))
+                .map(MemberView::role)
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Current user is not a project member."));
+    }
+
+    private WorkspaceState requireLeader(long projectId, Authentication authentication) {
+        var workspace = projectWorkspaceUseCase.getProjectWorkspace(projectId);
+        if (projectRole(workspace, authentication) != TeamRole.LEADER) {
+            throw new IllegalArgumentException("Project leader permission is required.");
+        }
+        return workspace;
     }
 
     private UserMeResponse userMe(WorkspaceState workspace, Authentication authentication) {
@@ -337,23 +357,14 @@ public class ProjectApiController {
                     authUser.university(),
                     authUser.phone());
         }
-        var leader = workspace.members().stream()
-                .filter(member -> member.name().equalsIgnoreCase(workspace.user().name()))
-                .findFirst();
-        return new UserMeResponse(
-                leader.map(MemberView::id).orElse(workspace.projectId()),
-                workspace.user().email(),
-                workspace.user().email(),
-                workspace.user().name(),
-                workspace.user().university(),
-                workspace.user().phone());
+        throw new IllegalArgumentException("Authentication user is required.");
     }
 
     private UserProfile currentUser(Authentication authentication) {
         if (authentication != null && authentication.getPrincipal() instanceof AuthUser authUser) {
             return new UserProfile(authUser.name(), authUser.email(), authUser.university(), authUser.phone());
         }
-        return workspaceQueryUseCase.getWorkspace().user();
+        throw new IllegalArgumentException("Authentication user is required.");
     }
 
     private DashboardResponse dashboard(WorkspaceState workspace) {
@@ -518,196 +529,6 @@ public class ProjectApiController {
         return workspace.reports().stream()
                 .max(Comparator.comparingLong(ReportView::id))
                 .orElseThrow(() -> new IllegalArgumentException("Report not found."));
-    }
-
-    private byte[] reportPdf(WorkspaceState workspace, ReportView report) {
-        var lines = new java.util.ArrayList<String>();
-        addReportLine(lines, "TeamPulse Report");
-        addReportLine(lines, "Generated at: " + LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS));
-        addReportLine(lines, "Project: " + textOrDash(workspace.team().name()));
-        addReportLine(lines, "Subject: " + textOrDash(workspace.team().courseName()));
-        addReportLine(lines, "Schedule: " + textOrDash(workspace.team().startDate()) + " ~ " + textOrDash(workspace.team().dueDate()));
-        addReportLine(lines, "Report range: " + report.range() + " / Status: " + report.status());
-
-        addReportSection(lines, "Executive Summary");
-        addWrappedReportLine(lines, "Tasks: total " + workspace.tasks().size()
-                + ", TODO " + countTasksByStatus(workspace, TaskStatus.TODO)
-                + ", DOING " + countTasksByStatus(workspace, TaskStatus.DOING)
-                + ", DONE " + countTasksByStatus(workspace, TaskStatus.DONE)
-                + ", overdue " + countOverdueTasks(workspace) + ".");
-        addWrappedReportLine(lines, "Meetings: " + workspace.meetings().size()
-                + ", risks: " + workspace.risks().size()
-                + ", recent activity logs: " + workspace.activities().size() + ".");
-        addWrappedReportLine(lines, "Members: " + workspace.members().stream()
-                .map(member -> member.name() + "(" + member.role() + ")")
-                .collect(java.util.stream.Collectors.joining(", ")));
-
-        addReportSection(lines, "Task Details");
-        if (workspace.tasks().isEmpty()) {
-            addReportLine(lines, "- No tasks recorded.");
-        } else {
-            workspace.tasks().stream()
-                    .sorted(Comparator.comparing(TaskView::dueDate))
-                    .limit(8)
-                    .forEach(task -> {
-                        addWrappedReportLine(lines, "- #" + task.id() + " [" + task.status() + "] "
-                                + task.title() + " / owner: " + task.owner()
-                                + " / due: " + task.dueDate()
-                                + " / priority: " + task.priority());
-                        if (!task.blockers().isEmpty()) {
-                            addWrappedReportLine(lines, "  blockers: " + String.join(", ", task.blockers()));
-                        }
-                        if (task.note() != null && !task.note().isBlank()) {
-                            addWrappedReportLine(lines, "  note: " + task.note());
-                        }
-                    });
-        }
-
-        addReportSection(lines, "Meeting Notes");
-        if (workspace.meetings().isEmpty()) {
-            addReportLine(lines, "- No meetings recorded.");
-        } else {
-            workspace.meetings().stream()
-                    .sorted(Comparator.comparing(MeetingView::time).reversed())
-                    .limit(4)
-                    .forEach(meeting -> {
-                        addWrappedReportLine(lines, "- " + meeting.time() + " / " + meeting.title());
-                        addWrappedReportLine(lines, "  agenda: " + meeting.agenda());
-                        if (!meeting.decisions().isEmpty()) {
-                            addWrappedReportLine(lines, "  decisions: " + String.join(", ", meeting.decisions()));
-                        }
-                        if (!meeting.actionItems().isEmpty()) {
-                            addWrappedReportLine(lines, "  action items: " + meeting.actionItems().stream()
-                                    .map(MeetingActionItemView::content)
-                                    .collect(java.util.stream.Collectors.joining(", ")));
-                        }
-                    });
-        }
-
-        addReportSection(lines, "Risk Signals");
-        if (workspace.risks().isEmpty()) {
-            addReportLine(lines, "- No active risk signals.");
-        } else {
-            workspace.risks().stream()
-                    .limit(5)
-                    .forEach(risk -> {
-                        addWrappedReportLine(lines, "- [" + risk.severity() + "] " + risk.title());
-                        addWrappedReportLine(lines, "  basis: " + risk.body());
-                        addWrappedReportLine(lines, "  suggested action: " + risk.action());
-                    });
-        }
-
-        addReportSection(lines, "Recent Activity");
-        if (workspace.activities().isEmpty()) {
-            addReportLine(lines, "- No activity logs recorded.");
-        } else {
-            workspace.activities().stream()
-                    .limit(6)
-                    .forEach(activity -> addWrappedReportLine(lines,
-                "- " + activity.at() + " / " + activity.actor() + ": " + activity.summary()));
-    }
-
-        var stream = new StringBuilder("BT\n/F1 16 Tf\n50 790 Td\n");
-        for (int index = 0; index < lines.size(); index++) {
-            if (index == 1) {
-                stream.append("/F1 9 Tf\n");
-            }
-            if (index > 0) {
-                stream.append("0 -15 Td\n");
-            }
-            stream.append("(").append(pdfText(lines.get(index))).append(") Tj\n");
-        }
-        stream.append("ET");
-        return minimalPdf(stream.toString());
-    }
-
-    private void addReportSection(List<String> lines, String title) {
-        addReportLine(lines, "");
-        addReportLine(lines, title);
-    }
-
-    private void addWrappedReportLine(List<String> lines, String value) {
-        var clean = textOrDash(value).replaceAll("\\s+", " ").trim();
-        var width = 92;
-        while (clean.length() > width) {
-            var splitAt = clean.lastIndexOf(' ', width);
-            if (splitAt < 40) {
-                splitAt = width;
-            }
-            addReportLine(lines, clean.substring(0, splitAt));
-            clean = clean.substring(splitAt).trim();
-        }
-        addReportLine(lines, clean);
-    }
-
-    private void addReportLine(List<String> lines, String value) {
-        if (lines.size() >= 51) {
-            return;
-        }
-        lines.add(value == null ? "" : value);
-    }
-
-    private long countTasksByStatus(WorkspaceState workspace, TaskStatus status) {
-        return workspace.tasks().stream()
-                .filter(task -> task.status() == status)
-                .count();
-    }
-
-    private long countOverdueTasks(WorkspaceState workspace) {
-        var today = LocalDate.now();
-        return workspace.tasks().stream()
-                .filter(task -> task.status() != TaskStatus.DONE)
-                .filter(task -> parseDateOrMax(task.dueDate()).isBefore(today))
-                .count();
-    }
-
-    private String textOrDash(String value) {
-        return value == null || value.isBlank() ? "-" : value.trim();
-    }
-
-    private byte[] minimalPdf(String contentStream) {
-        var objects = List.of(
-                "<< /Type /Catalog /Pages 2 0 R >>",
-                "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-                "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
-                "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-                "<< /Length " + contentStream.length() + " >>\nstream\n" + contentStream + "\nendstream");
-        var body = new StringBuilder("%PDF-1.4\n");
-        var offsets = new java.util.ArrayList<Integer>();
-        for (int index = 0; index < objects.size(); index++) {
-            offsets.add(body.length());
-            body.append(index + 1).append(" 0 obj\n")
-                    .append(objects.get(index)).append("\n")
-                    .append("endobj\n");
-        }
-        var xrefOffset = body.length();
-        body.append("xref\n0 ").append(objects.size() + 1).append("\n")
-                .append("0000000000 65535 f \n");
-        for (var offset : offsets) {
-            body.append("%010d 00000 n \n".formatted(offset));
-        }
-        body.append("trailer\n<< /Size ").append(objects.size() + 1).append(" /Root 1 0 R >>\n")
-                .append("startxref\n")
-                .append(xrefOffset)
-                .append("\n%%EOF\n");
-        return body.toString().getBytes(StandardCharsets.US_ASCII);
-    }
-
-    private String pdfText(String value) {
-        if (value == null || value.isBlank()) {
-            return "";
-        }
-        var builder = new StringBuilder();
-        for (var character : value.toCharArray()) {
-            if (character == '(' || character == ')' || character == '\\') {
-                builder.append('\\').append(character);
-            } else if (character >= 32 && character <= 126) {
-                builder.append(character);
-            } else {
-                builder.append('?');
-            }
-        }
-        return builder.toString();
     }
 
     private List<RiskActionOption> riskActions(RiskView risk, WorkspaceState workspace) {

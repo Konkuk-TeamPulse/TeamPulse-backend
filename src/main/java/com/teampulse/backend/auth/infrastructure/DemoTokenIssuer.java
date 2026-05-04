@@ -10,6 +10,7 @@ import java.util.Base64;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
@@ -25,7 +26,7 @@ public class DemoTokenIssuer implements TokenIssuer, RefreshTokenRegistry, Acces
 
     @Override
     public JwtInfo issue(AuthUser user) {
-        var tokenSeed = user.id() + ":" + user.email();
+        var tokenSeed = user.id() + ":" + user.email() + ":" + UUID.randomUUID();
         var token = Base64.getUrlEncoder().withoutPadding()
                 .encodeToString(tokenSeed.getBytes(StandardCharsets.UTF_8));
         var accessToken = "Bearer demo-access-" + token;
@@ -50,6 +51,17 @@ public class DemoTokenIssuer implements TokenIssuer, RefreshTokenRegistry, Acces
             activeAccessTokens.remove(accessToken);
             userByAccessToken.remove(accessToken);
         }
+    }
+
+    @Override
+    public JwtInfo rotate(String refreshToken) {
+        if (!isActive(refreshToken)) {
+            throw new com.teampulse.backend.auth.application.InvalidRefreshTokenException();
+        }
+        var accessToken = accessTokenByRefreshToken.get(refreshToken);
+        var user = userByAccessToken.get(accessToken);
+        revoke(refreshToken);
+        return issue(user);
     }
 
     @Override

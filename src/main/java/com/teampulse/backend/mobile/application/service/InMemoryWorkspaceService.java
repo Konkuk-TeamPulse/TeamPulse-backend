@@ -509,13 +509,13 @@ public class InMemoryWorkspaceService implements WorkspaceService {
         for (int index = 0; index < members.size(); index++) {
             var member = members.get(index);
             if (member.email().isBlank() && member.name().equalsIgnoreCase(normalizedName)) {
-                members.set(index, new MemberView(member.id(), normalizedName, normalizedEmail, role == null ? TeamRole.MEMBER : role));
+                members.set(index, new MemberView(member.id(), normalizedName, normalizedEmail, TeamRole.MEMBER));
                 claimedLegacyMember = true;
                 break;
             }
         }
         if (!claimedLegacyMember) {
-            members.add(new MemberView(nextId(), normalizedName, normalizedEmail, role == null ? TeamRole.MEMBER : role));
+            members.add(new MemberView(nextId(), normalizedName, normalizedEmail, TeamRole.MEMBER));
         }
         var activities = prependActivity(workspace.activities(), activity(workspace.user().name(), normalizedName + " accepted invitation."));
         workspace = copy(workspace, workspace.tasks(), workspace.meetings(), activities, workspace.reports(), members, workspace.team());

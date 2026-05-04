@@ -10,7 +10,7 @@ import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
 @Repository
-@Profile("mysql")
+@Profile({"mysql", "prod"})
 @Transactional
 public class JpaAuthUserRepository implements AuthUserRepository {
 

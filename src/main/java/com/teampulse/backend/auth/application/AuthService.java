@@ -4,6 +4,8 @@ import com.teampulse.backend.auth.domain.AuthUser;
 import com.teampulse.backend.auth.dto.LoginRequest;
 import com.teampulse.backend.auth.dto.LoginResponse;
 import com.teampulse.backend.auth.dto.LogoutRequest;
+import com.teampulse.backend.auth.dto.JwtInfo;
+import com.teampulse.backend.auth.dto.RefreshTokenRequest;
 import com.teampulse.backend.auth.dto.SignupRequest;
 import com.teampulse.backend.auth.dto.SignupResponse;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -16,16 +18,19 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final TokenIssuer tokenIssuer;
     private final RefreshTokenRegistry refreshTokenRegistry;
+    private final LoginAttemptGuard loginAttemptGuard;
 
     public AuthService(
             AuthUserRepository userRepository,
             PasswordEncoder passwordEncoder,
             TokenIssuer tokenIssuer,
-            RefreshTokenRegistry refreshTokenRegistry) {
+            RefreshTokenRegistry refreshTokenRegistry,
+            LoginAttemptGuard loginAttemptGuard) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.tokenIssuer = tokenIssuer;
         this.refreshTokenRegistry = refreshTokenRegistry;
+        this.loginAttemptGuard = loginAttemptGuard;
     }
 
     public SignupResponse signup(SignupRequest request) {
@@ -53,12 +58,14 @@ public class AuthService {
 
     public LoginResponse login(LoginRequest request) {
         var email = normalizeEmail(request.email());
-        var user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new AuthUserNotFoundException(email));
-        if (!passwordEncoder.matches(request.password(), user.passwordHash())) {
-            throw new InvalidPasswordException();
+        loginAttemptGuard.assertAllowed(email);
+        var user = userRepository.findByEmail(email);
+        if (user.isEmpty() || !passwordEncoder.matches(request.password(), user.get().passwordHash())) {
+            loginAttemptGuard.recordFailure(email);
+            throw new InvalidCredentialsException();
         }
-        return new LoginResponse(user.id(), user.email(), tokenIssuer.issue(user));
+        loginAttemptGuard.recordSuccess(email);
+        return new LoginResponse(user.get().id(), user.get().email(), tokenIssuer.issue(user.get()));
     }
 
     public void logout(LogoutRequest request) {
@@ -67,6 +74,10 @@ public class AuthService {
             throw new InvalidRefreshTokenException();
         }
         refreshTokenRegistry.revoke(refreshToken);
+    }
+
+    public JwtInfo refresh(RefreshTokenRequest request) {
+        return refreshTokenRegistry.rotate(request.refreshToken().trim());
     }
 
     private String normalizeEmail(String email) {

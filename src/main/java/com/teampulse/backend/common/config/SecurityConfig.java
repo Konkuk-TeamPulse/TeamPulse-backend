@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
@@ -32,8 +33,23 @@ public class SecurityConfig {
     SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             DemoAccessTokenAuthenticationFilter demoAccessTokenAuthenticationFilter,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            @Value("${app.security.public-api-docs:true}") boolean publicApiDocs,
+            @Value("${app.security.public-roadmap:false}") boolean publicRoadmap
     ) throws Exception {
+        var publicMatchers = new ArrayList<>(List.of(
+                "/api/health",
+                "/api/demo/**",
+                "/api/mobile/**",
+                "/api/auth/**"
+        ));
+        if (publicApiDocs) {
+            publicMatchers.add("/v3/api-docs/**");
+        }
+        if (publicRoadmap) {
+            publicMatchers.add("/api/roadmap");
+        }
+
         http
                 .csrf(AbstractHttpConfigurer::disable)
                 .cors(Customizer.withDefaults())
@@ -42,16 +58,9 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .exceptionHandling(exception -> exception
                         .authenticationEntryPoint((request, response, authException) -> writeAuthenticationRequired(response, objectMapper))
-                        .accessDeniedHandler((request, response, accessDeniedException) -> writeAuthenticationRequired(response, objectMapper)))
+                        .accessDeniedHandler((request, response, accessDeniedException) -> writeAccessDenied(response, objectMapper)))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(
-                                "/api/health",
-                                "/api/roadmap",
-                                "/api/demo/**",
-                                "/api/mobile/**",
-                                "/api/auth/**",
-                                "/v3/api-docs/**"
-                        )
+                        .requestMatchers(publicMatchers.toArray(String[]::new))
                         .permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/invitations/*")
                         .permitAll()
@@ -77,6 +86,13 @@ public class SecurityConfig {
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         objectMapper.writeValue(response.getWriter(), SpecResponse.fail(3001, "\uB85C\uADF8\uC778\uC774 \uD544\uC694\uD569\uB2C8\uB2E4.", null));
+    }
+
+    private void writeAccessDenied(HttpServletResponse response, ObjectMapper objectMapper) throws IOException {
+        response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        objectMapper.writeValue(response.getWriter(), SpecResponse.fail(3008, "접근 권한이 없습니다.", null));
     }
 
     @Bean

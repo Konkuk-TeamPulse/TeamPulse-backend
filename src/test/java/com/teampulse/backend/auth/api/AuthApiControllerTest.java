@@ -106,11 +106,11 @@ class AuthApiControllerTest {
                                 {
                                   "email": "unknown-login@example.com",
                                   "password": "!aaa123123"
-                                }
-                                """))
-                .andExpect(status().isNotFound())
+                }
+                """))
+                .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.isSuccess").value(false))
-                .andExpect(jsonPath("$.responseCode").value(2013));
+                .andExpect(jsonPath("$.responseCode").value(2014));
     }
 
     @Test
@@ -131,6 +131,39 @@ class AuthApiControllerTest {
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.isSuccess").value(false))
                 .andExpect(jsonPath("$.responseCode").value(2014));
+    }
+
+    @Test
+    void loginLocksAfterRepeatedFailures() throws Exception {
+        mockMvc.perform(post("/api/auth/signup")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(signupBody("lockout@example.com", "!aaa123123")))
+                .andExpect(status().isOk());
+
+        for (int attempt = 0; attempt < 5; attempt++) {
+            mockMvc.perform(post("/api/auth/login")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {
+                                      "email": "lockout@example.com",
+                                      "password": "!wrong123123"
+                                    }
+                                    """))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(jsonPath("$.responseCode").value(2014));
+        }
+
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "email": "lockout@example.com",
+                                  "password": "!aaa123123"
+                                }
+                                """))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.isSuccess").value(false))
+                .andExpect(jsonPath("$.responseCode").value(2015));
     }
 
     @Test
@@ -196,6 +229,41 @@ class AuthApiControllerTest {
                 .andExpect(jsonPath("$.isSuccess").value(false))
                 .andExpect(jsonPath("$.responseCode").value(2020))
                 .andExpect(jsonPath("$.result.errors").isArray());
+    }
+
+    @Test
+    void refreshRotatesRefreshToken() throws Exception {
+        var signupResult = mockMvc.perform(post("/api/auth/signup")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(signupBody("refresh-success@example.com", "!aaa123123")))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        String refreshToken = JsonPath.read(
+                signupResult.getResponse().getContentAsString(),
+                "$.result.jwtInfo.refreshToken");
+
+        var refreshResult = mockMvc.perform(post("/api/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(logoutBody(refreshToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.accessToken").exists())
+                .andExpect(jsonPath("$.result.refreshToken").exists())
+                .andReturn();
+
+        String rotatedRefreshToken = JsonPath.read(
+                refreshResult.getResponse().getContentAsString(),
+                "$.result.refreshToken");
+
+        mockMvc.perform(post("/api/auth/logout")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(logoutBody(refreshToken)))
+                .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(post("/api/auth/logout")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(logoutBody(rotatedRefreshToken)))
+                .andExpect(status().isOk());
     }
 
     private String signupBody(String email, String password) {

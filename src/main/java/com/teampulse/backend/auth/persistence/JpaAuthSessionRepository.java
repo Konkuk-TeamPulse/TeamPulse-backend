@@ -8,4 +8,6 @@ public interface JpaAuthSessionRepository extends JpaRepository<AuthSessionEntit
     Optional<AuthSessionEntity> findByRefreshToken(String refreshToken);
 
     Optional<AuthSessionEntity> findByAccessToken(String accessToken);
+
+    void deleteByExpiresAtBefore(java.time.LocalDateTime expiresAt);
 }

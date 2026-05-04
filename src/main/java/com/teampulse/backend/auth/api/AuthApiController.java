@@ -4,6 +4,8 @@ import com.teampulse.backend.auth.application.AuthService;
 import com.teampulse.backend.auth.dto.LoginRequest;
 import com.teampulse.backend.auth.dto.LoginResponse;
 import com.teampulse.backend.auth.dto.LogoutRequest;
+import com.teampulse.backend.auth.dto.JwtInfo;
+import com.teampulse.backend.auth.dto.RefreshTokenRequest;
 import com.teampulse.backend.auth.dto.SignupRequest;
 import com.teampulse.backend.auth.dto.SignupResponse;
 import com.teampulse.backend.common.api.SpecResponse;
@@ -39,5 +41,10 @@ public class AuthApiController {
     public SpecResponse<Void> logout(@Valid @RequestBody LogoutRequest request) {
         authService.logout(request);
         return SpecResponse.ok(SUCCESS_MESSAGE, null);
+    }
+
+    @PostMapping("/refresh")
+    public SpecResponse<JwtInfo> refresh(@Valid @RequestBody RefreshTokenRequest request) {
+        return SpecResponse.ok(SUCCESS_MESSAGE, authService.refresh(request));
     }
 }

@@ -632,7 +632,11 @@ class WorkspaceControllerTest {
         mockMvc.perform(post("/api/invitations/{inviteCode}/accept", inviteCode)
                         .header("Authorization", accessToken)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{}"))
+                        .content("""
+                                {
+                                  "role": "LEADER"
+                                }
+                                """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.isSuccess").value(true))
                 .andExpect(jsonPath("$.responseCode").value(1000))
@@ -640,6 +644,19 @@ class WorkspaceControllerTest {
                 .andExpect(jsonPath("$.result.projectId").value(1))
                 .andExpect(jsonPath("$.result.projectName").value("Invitation Project"))
                 .andExpect(jsonPath("$.result.role").value("MEMBER"));
+
+        mockMvc.perform(post("/api/projects/1/invitations")
+                        .header("Authorization", accessToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.isSuccess").value(false))
+                .andExpect(jsonPath("$.responseCode").value(3008));
+
+        String outsiderToken = issueAccessToken("invitation-outsider@example.com");
+        mockMvc.perform(post("/api/projects/1/invitations")
+                        .header("Authorization", outsiderToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.isSuccess").value(false))
+                .andExpect(jsonPath("$.responseCode").value(3008));
     }
 
     @Test

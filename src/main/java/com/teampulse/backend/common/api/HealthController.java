@@ -23,14 +23,7 @@ public class HealthController {
         return ApiResponse.ok(Map.of(
                 "status", "UP",
                 "service", "teampulse-backend",
-                "currentPhase", "Phase 0 -> Phase 1",
                 "storageMode", storageMode,
-                "publicApi", true,
-                "deploymentTarget", Map.of(
-                        "frontend", "Vercel Production",
-                        "backend", "AWS Elastic Beanstalk",
-                        "database", "AWS RDS MySQL"
-                ),
                 "enums", Map.of(
                         "teamRoles", TeamRole.values(),
                         "taskStatus", TaskStatus.values(),

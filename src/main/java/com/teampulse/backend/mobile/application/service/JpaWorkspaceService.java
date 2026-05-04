@@ -29,7 +29,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
-@Profile("mysql")
+@Profile({"mysql", "prod"})
 @Transactional
 public class JpaWorkspaceService implements WorkspaceService {
 
@@ -529,12 +529,12 @@ public class JpaWorkspaceService implements WorkspaceService {
                 .findFirst();
         if (legacyMember.isPresent()) {
             legacyMember.get().setEmail(normalizedEmail);
-            legacyMember.get().setRole(role == null ? TeamRole.MEMBER : role);
+            legacyMember.get().setRole(TeamRole.MEMBER);
             workspace.getActivities().add(activity(workspace, workspace.getUserName(), normalizedName + " accepted invitation."));
             return persistAndProject(workspace);
         }
 
-        workspace.getMembers().add(member(workspace, normalizedName, normalizedEmail, role == null ? TeamRole.MEMBER : role));
+        workspace.getMembers().add(member(workspace, normalizedName, normalizedEmail, TeamRole.MEMBER));
         workspace.getActivities().add(activity(workspace, workspace.getUserName(), normalizedName + " accepted invitation."));
         return persistAndProject(workspace);
     }
