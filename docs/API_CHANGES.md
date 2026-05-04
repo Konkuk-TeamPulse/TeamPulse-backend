@@ -14,6 +14,7 @@
 | 리포트 목록 | 생성된 리포트 목록을 다시 조회할 API 부족 | `GET /api/projects/{projectId}/reports` 추가 | 리포트 화면에서 목록 조회 가능 | 신규 API 추가 |
 | 잘못된 요청 본문 | 잘못된 enum 값이 500으로 보일 수 있음 | 400, 코드 `2020`으로 처리 | 상태값은 `TODO/DOING/DONE`만 전송 | enum 값 명시 |
 | DB 스키마 | 초대 멤버와 워크스페이스 소유자 구분이 약함 | `members.email`, `workspaces.owner_email` 사용 | 직접 영향 없음 | DB 설계 문서 반영 |
+| 멀티 프로젝트 | API 응답과 조회가 `projectId=1` 중심으로 고정됨 | 실제 DB의 `assignment2_workspaces.id`를 `projectId`로 사용 | 생성/조회/태스크/회의/리포트 모두 실제 projectId 사용 필요 | MVP 제약 문구 수정 |
 
 ## 팀원이 바로 확인할 일
 
@@ -37,7 +38,51 @@
 - MySQL 프로필 기준 주요 테이블은 `assignment2_*`, `users`, `auth_sessions`입니다.
 - 이번 변경으로 `assignment2_members.email` 컬럼이 추가되었습니다.
 - 이전 변경에서 `assignment2_workspaces.owner_email` 컬럼이 추가되었습니다.
+- 2026-05-04 추가 변경으로 `projectId=1` 고정 응답을 제거하고, `assignment2_workspaces.id`를 실제 프로젝트 ID로 사용합니다.
 - Hibernate `ddl-auto=update`로 로컬 DB에는 자동 반영됩니다. 운영 DB를 따로 만들면 마이그레이션 SQL로 반영해야 합니다.
+
+### 6. 실제 projectId 기반 멀티 프로젝트 지원
+
+- 변경 파일
+  - `src/main/java/com/teampulse/backend/mobile/application/ProjectWorkspaceUseCase.java`
+  - `src/main/java/com/teampulse/backend/mobile/application/service/JpaWorkspaceService.java`
+  - `src/main/java/com/teampulse/backend/mobile/api/ProjectApiController.java`
+  - `src/main/java/com/teampulse/backend/mobile/api/ProjectTaskApiController.java`
+  - `src/main/java/com/teampulse/backend/mobile/api/ProjectMeetingApiController.java`
+  - `src/main/java/com/teampulse/backend/mobile/api/TaskApiController.java`
+  - `src/main/java/com/teampulse/backend/mobile/api/MeetingApiController.java`
+  - `src/main/java/com/teampulse/backend/mobile/api/InvitationApiController.java`
+  - `src/main/java/com/teampulse/backend/mobile/dto/WorkspaceState.java`
+  - `src/main/java/com/teampulse/backend/mobile/dto/MemberView.java`
+  - `src/main/java/com/teampulse/backend/mobile/persistence/MobileWorkspaceRepository.java`
+- 영향 API
+  - `POST /api/projects`
+  - `GET /api/projects`
+  - `GET/PATCH /api/projects/{projectId}`
+  - `GET /api/projects/{projectId}/dashboard`
+  - `GET/POST/PATCH/DELETE /api/projects/{projectId}/tasks/**`
+  - `PATCH/DELETE /api/tasks/{taskId}`
+  - `PATCH /api/tasks/{taskId}/status`
+  - `POST/DELETE /api/tasks/{taskId}/dependencies/**`
+  - `GET/POST /api/projects/{projectId}/meetings/**`
+  - `GET /api/meetings/{meetingId}`
+  - `GET/POST /api/projects/{projectId}/reports/**`
+  - `GET /api/reports/{reportId}/download`
+  - `GET /api/invitations/{inviteCode}`
+  - `POST /api/invitations/{inviteCode}/accept`
+- 변경 내용
+  - `POST /api/projects`는 더 이상 항상 `projectId: 1`을 반환하지 않고, MySQL에 저장된 실제 워크스페이스 ID를 반환합니다.
+  - `GET /api/projects`는 로그인 사용자가 소유자이거나 멤버로 속한 모든 프로젝트를 반환합니다.
+  - `/api/projects/{projectId}/...` 하위 API는 전달받은 projectId에 해당하는 프로젝트 안에서만 태스크/회의/리포트/멤버를 조회·수정합니다.
+  - `/api/tasks/{taskId}`처럼 projectId가 없는 API는 taskId가 속한 프로젝트를 먼저 찾고, 현재 로그인 사용자가 접근 가능한 프로젝트인지 확인합니다.
+  - 초대 조회/수락 응답의 `projectId`, 회의 상세 응답의 `projectId`, 리포트 다운로드도 실제 소속 프로젝트 ID를 반환합니다.
+  - 초대 수락 시 같은 이름의 다른 사용자를 같은 멤버로 오인하지 않도록 이메일을 우선 기준으로 사용합니다.
+  - `DELETE /api/projects/{projectId}/members/me`는 프로젝트 리더 이름이 아니라 현재 로그인 사용자의 이메일/이름 기준으로 본인을 찾습니다.
+- 프론트 전달사항
+  - 프로젝트 생성 후 응답의 `result.projectId`를 저장해서 이후 URL에 사용해야 합니다.
+  - 더 이상 프론트에서 `1`을 기본 projectId로 가정하면 안 됩니다.
+  - 초대 수락 후 `GET /api/projects`를 다시 호출하면 초대받은 프로젝트가 `MEMBER` 역할로 나타납니다.
+  - 권한 없는 프로젝트 접근은 현재 Spec 오류 응답으로 400을 반환합니다. 프론트에서는 접근 불가/프로젝트 없음 화면으로 처리하면 됩니다.
 
 ## 2026-05-04 백엔드 검증 및 DB 연동 보완
 
@@ -242,6 +287,8 @@ MySQL 프로필 기준 주요 테이블은 아래와 같습니다.
 4. 초대 링크는 `GET` 공개 조회, `POST accept` 로그인 필요로 구분합니다.
 5. MySQL 저장 테이블에 `assignment2_members.email`과 `assignment2_workspaces.owner_email`이 추가된 점을 DB 설계 문서에 반영합니다.
 6. 태스크 의존관계 순환 오류 코드 `3006`을 오류 코드 표에 추가하거나 기존 태스크 의존성 오류에 포함합니다.
+7. `projectId`는 더 이상 `1` 고정값이 아니라 `assignment2_workspaces.id` 기반 실제 DB ID라고 명시합니다.
+8. projectId 없는 태스크/회의/리포트 상세 API는 해당 리소스가 속한 프로젝트를 서버가 찾아 권한을 검사한다고 적습니다.
 
 ## 2026-05-04 실제 검증 결과
 
@@ -249,27 +296,32 @@ MySQL 프로필 기준 주요 테이블은 아래와 같습니다.
 - DB: MySQL 8.4.8, `teampulse` database
 - 검증 흐름
   - 회원가입 2명
-  - 프로젝트 생성
-  - 태스크 2개 생성
-  - 태스크 상태 변경
+  - 동일한 리더 계정으로 프로젝트 2개 생성
+  - 프로젝트 A/B에 각각 태스크 생성
+  - 프로젝트 A/B 태스크 목록 격리 확인
+  - projectId 없는 `PATCH /api/tasks/{taskId}/status`로 프로젝트 B 태스크 상태 변경
   - 잘못된 상태값 400 처리 확인
   - 태스크 의존관계 생성
   - 순환 의존관계 400 처리 확인
-  - 회의 생성
+  - 프로젝트 B 회의 생성 및 `GET /api/meetings/{meetingId}`의 projectId 확인
   - 초대 링크 생성/공개 조회/수락
-  - 초대받은 사용자의 프로젝트 목록 조회
-  - 리포트 생성/목록 조회/PDF 다운로드
+  - 초대받은 사용자의 프로젝트 목록 조회 및 unrelated 프로젝트 접근 차단 확인
+  - 프로젝트 B 리포트 생성/목록 조회/PDF 다운로드
 - 최종 확인 데이터
-  - 프로젝트: `Smoke Project 20260504020506`
-  - 초대 코드: `JJ3JP7`
+  - 리더 이메일: `multi-leader-1777865007084@example.com`
+  - 초대 멤버 이메일: `multi-member-1777865007084@example.com`
+  - 프로젝트 A ID: `22`
+  - 프로젝트 B ID: `23`
+  - 프로젝트 A 태스크 ID: `27`
+  - 프로젝트 B 태스크 ID: `28`
+  - 프로젝트 B 회의 ID: `6`
   - 초대받은 사용자 역할: `MEMBER`
+  - 권한 없는 프로젝트 접근 응답: `400`
   - 순환 의존관계 오류 코드: `3006`
   - 잘못된 상태값 오류 코드: `2020`
-  - 리포트 ID: `8`
-  - PDF 다운로드 크기: `2533 bytes`
+  - 프로젝트 B 리포트 ID: `10`
 
 ## 남은 MVP 제약
 
-- 프로젝트 ID는 아직 MVP 호환을 위해 `1` 중심으로 동작합니다.
-- 한 사용자가 여러 프로젝트에 속하는 완전한 멀티 프로젝트 구조는 아직 아닙니다.
+- MySQL 프로필에서는 실제 projectId 기반으로 여러 프로젝트가 동작합니다. `demo` 프로필의 인메모리 구현은 기존 테스트 호환을 위해 단일 프로젝트 중심으로 유지합니다.
 - 리포트 PDF는 백엔드에서 생성한 단일 페이지 요약 PDF입니다. 실제 서비스 수준에서는 PDF 템플릿/한글 폰트/다중 페이지 처리가 추가로 필요합니다.
