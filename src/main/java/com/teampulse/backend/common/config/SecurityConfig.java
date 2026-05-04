@@ -49,7 +49,8 @@ public class SecurityConfig {
                                 "/api/roadmap",
                                 "/api/demo/**",
                                 "/api/mobile/**",
-                                "/api/auth/**"
+                                "/api/auth/**",
+                                "/v3/api-docs/**"
                         )
                         .permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/invitations/*")

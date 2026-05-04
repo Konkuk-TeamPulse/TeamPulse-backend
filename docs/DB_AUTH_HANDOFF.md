@@ -80,7 +80,8 @@
 
 - `demo` 프로필은 기존 테스트 호환을 위해 인메모리 단일 프로젝트 중심입니다. 실제 앱 검증은 `mysql` 프로필 기준으로 봐야 합니다.
 - PDF 생성기는 최소 구현이라 한 페이지 중심이며, 한글 폰트 내장은 아직 없습니다.
-- 운영 배포용 DB 마이그레이션 도구는 아직 별도로 구성하지 않았습니다. 현재는 Hibernate `ddl-auto=update` 기반입니다.
+- MySQL 프로필은 Flyway migration + Hibernate `validate` 기반으로 전환했습니다.
+- Supabase 프로필은 아직 별도 PostgreSQL migration을 구성하지 않았고, 기존 Hibernate `ddl-auto=update` 설정을 유지합니다.
 
 ## 검증한 흐름
 

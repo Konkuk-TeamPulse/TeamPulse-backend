@@ -15,6 +15,8 @@
 | 잘못된 요청 본문 | 잘못된 enum 값이 500으로 보일 수 있음 | 400, 코드 `2020`으로 처리 | 상태값은 `TODO/DOING/DONE`만 전송 | enum 값 명시 |
 | DB 스키마 | 초대 멤버와 워크스페이스 소유자 구분이 약함 | `members.email`, `workspaces.owner_email` 사용 | 직접 영향 없음 | DB 설계 문서 반영 |
 | 멀티 프로젝트 | API 응답과 조회가 `projectId=1` 중심으로 고정됨 | 실제 DB의 `assignment2_workspaces.id`를 `projectId`로 사용 | 생성/조회/태스크/회의/리포트 모두 실제 projectId 사용 필요 | MVP 제약 문구 수정 |
+| DB migration | 운영 DB 스키마가 Hibernate `ddl-auto=update`에 의존 | MySQL profile은 Flyway migration + Hibernate validate로 전환 | 기존 API path 영향 없음 | DB 운영/배포 절차 반영 |
+| API 문서 | Notion과 코드의 API 명세 동기화가 수동 중심 | OpenAPI JSON 제공 | API 호출 구조 확인 가능 | API 문서 위치 추가 |
 
 ## 팀원이 바로 확인할 일
 
@@ -24,6 +26,8 @@
 - 태스크 상태값은 `TODO`, `DOING`, `DONE`만 보내야 합니다. `IN_PROGRESS`는 실패합니다.
 - 초대 수락 성공 후 `GET /api/projects`를 다시 호출해 프로젝트 목록을 갱신해야 합니다.
 - 리포트 히스토리가 필요하면 `GET /api/projects/{projectId}/reports`를 호출하면 됩니다.
+- API 명세를 코드 기준으로 확인할 때는 `GET /v3/api-docs`를 보면 됩니다.
+- MySQL migration 도입으로 기존 프론트 API path는 바뀌지 않았습니다.
 
 ### API/Notion 문서 담당
 
@@ -32,6 +36,8 @@
 - 리포트 목록 조회 API `GET /api/projects/{projectId}/reports`를 추가합니다.
 - 태스크 상태 enum을 `TODO`, `DOING`, `DONE`으로 명시합니다.
 - 오류 코드 `3006`에 "자기 자신/순환 태스크 의존관계 불가"를 포함합니다.
+- 운영 DB 문서에는 MySQL profile 기준 `src/main/resources/db/migration/mysql`의 Flyway SQL이 실제 스키마 기준이라고 적습니다.
+- API 문서 위치에는 `GET /v3/api-docs`를 추가합니다.
 
 ### DB/백엔드 담당
 
@@ -39,7 +45,8 @@
 - 이번 변경으로 `assignment2_members.email` 컬럼이 추가되었습니다.
 - 이전 변경에서 `assignment2_workspaces.owner_email` 컬럼이 추가되었습니다.
 - 2026-05-04 추가 변경으로 `projectId=1` 고정 응답을 제거하고, `assignment2_workspaces.id`를 실제 프로젝트 ID로 사용합니다.
-- Hibernate `ddl-auto=update`로 로컬 DB에는 자동 반영됩니다. 운영 DB를 따로 만들면 마이그레이션 SQL로 반영해야 합니다.
+- MySQL profile은 Flyway migration으로 스키마를 만들고, Hibernate는 `validate`만 수행합니다.
+- 기존 DB에 Flyway 이력이 없으면 `baseline-on-migrate=true`로 현재 스키마를 기준점으로 잡은 뒤 보강 migration을 적용합니다.
 
 ### 6. 실제 projectId 기반 멀티 프로젝트 지원
 
