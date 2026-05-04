@@ -5,5 +5,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface MobileWorkspaceRepository extends JpaRepository<MobileWorkspaceEntity, Long> {
 
-    Optional<MobileWorkspaceEntity> findFirstByOrderByIdAsc();
+    Optional<MobileWorkspaceEntity> findFirstByOwnerEmailIgnoreCaseOrderByIdAsc(String ownerEmail);
 }

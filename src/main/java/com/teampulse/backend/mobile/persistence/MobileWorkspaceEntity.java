@@ -41,6 +41,9 @@ public class MobileWorkspaceEntity {
     @Column(name = "user_phone", nullable = false, length = 30)
     private String userPhone = "";
 
+    @Column(name = "owner_email", nullable = false, length = 191, columnDefinition = "varchar(191) not null default ''")
+    private String ownerEmail = "";
+
     @Column(name = "team_name", nullable = false, length = 80)
     private String teamName = "";
 

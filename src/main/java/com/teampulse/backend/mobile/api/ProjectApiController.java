@@ -17,6 +17,8 @@ import com.teampulse.backend.mobile.dto.BootstrapWorkspaceRequest;
 import com.teampulse.backend.mobile.dto.CreateMemberRequest;
 import com.teampulse.backend.mobile.dto.DashboardResponse;
 import com.teampulse.backend.mobile.dto.InvitationCreateResponse;
+import com.teampulse.backend.mobile.dto.MeetingActionItemView;
+import com.teampulse.backend.mobile.dto.MeetingView;
 import com.teampulse.backend.mobile.dto.MemberView;
 import com.teampulse.backend.mobile.dto.MemberSpecResponse;
 import com.teampulse.backend.mobile.dto.ProjectCreateRequest;
@@ -540,26 +542,148 @@ public class ProjectApiController {
     }
 
     private byte[] reportPdf(WorkspaceState workspace, ReportView report) {
-        var lines = List.of(
-                "TeamPulse Report",
-                "Project: " + workspace.team().name(),
-                "Range: " + report.range(),
-                "Status: " + report.status(),
-                "Tasks: " + workspace.tasks().size(),
-                "Meetings: " + workspace.meetings().size(),
-                "Risks: " + workspace.risks().size());
-        var stream = new StringBuilder("BT\n/F1 16 Tf\n50 780 Td\n");
+        var lines = new java.util.ArrayList<String>();
+        addReportLine(lines, "TeamPulse Report");
+        addReportLine(lines, "Generated at: " + LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS));
+        addReportLine(lines, "Project: " + textOrDash(workspace.team().name()));
+        addReportLine(lines, "Subject: " + textOrDash(workspace.team().courseName()));
+        addReportLine(lines, "Schedule: " + textOrDash(workspace.team().startDate()) + " ~ " + textOrDash(workspace.team().dueDate()));
+        addReportLine(lines, "Report range: " + report.range() + " / Status: " + report.status());
+
+        addReportSection(lines, "Executive Summary");
+        addWrappedReportLine(lines, "Tasks: total " + workspace.tasks().size()
+                + ", TODO " + countTasksByStatus(workspace, TaskStatus.TODO)
+                + ", DOING " + countTasksByStatus(workspace, TaskStatus.DOING)
+                + ", DONE " + countTasksByStatus(workspace, TaskStatus.DONE)
+                + ", overdue " + countOverdueTasks(workspace) + ".");
+        addWrappedReportLine(lines, "Meetings: " + workspace.meetings().size()
+                + ", risks: " + workspace.risks().size()
+                + ", recent activity logs: " + workspace.activities().size() + ".");
+        addWrappedReportLine(lines, "Members: " + workspace.members().stream()
+                .map(member -> member.name() + "(" + member.role() + ")")
+                .collect(java.util.stream.Collectors.joining(", ")));
+
+        addReportSection(lines, "Task Details");
+        if (workspace.tasks().isEmpty()) {
+            addReportLine(lines, "- No tasks recorded.");
+        } else {
+            workspace.tasks().stream()
+                    .sorted(Comparator.comparing(TaskView::dueDate))
+                    .limit(8)
+                    .forEach(task -> {
+                        addWrappedReportLine(lines, "- #" + task.id() + " [" + task.status() + "] "
+                                + task.title() + " / owner: " + task.owner()
+                                + " / due: " + task.dueDate()
+                                + " / priority: " + task.priority());
+                        if (!task.blockers().isEmpty()) {
+                            addWrappedReportLine(lines, "  blockers: " + String.join(", ", task.blockers()));
+                        }
+                        if (task.note() != null && !task.note().isBlank()) {
+                            addWrappedReportLine(lines, "  note: " + task.note());
+                        }
+                    });
+        }
+
+        addReportSection(lines, "Meeting Notes");
+        if (workspace.meetings().isEmpty()) {
+            addReportLine(lines, "- No meetings recorded.");
+        } else {
+            workspace.meetings().stream()
+                    .sorted(Comparator.comparing(MeetingView::time).reversed())
+                    .limit(4)
+                    .forEach(meeting -> {
+                        addWrappedReportLine(lines, "- " + meeting.time() + " / " + meeting.title());
+                        addWrappedReportLine(lines, "  agenda: " + meeting.agenda());
+                        if (!meeting.decisions().isEmpty()) {
+                            addWrappedReportLine(lines, "  decisions: " + String.join(", ", meeting.decisions()));
+                        }
+                        if (!meeting.actionItems().isEmpty()) {
+                            addWrappedReportLine(lines, "  action items: " + meeting.actionItems().stream()
+                                    .map(MeetingActionItemView::content)
+                                    .collect(java.util.stream.Collectors.joining(", ")));
+                        }
+                    });
+        }
+
+        addReportSection(lines, "Risk Signals");
+        if (workspace.risks().isEmpty()) {
+            addReportLine(lines, "- No active risk signals.");
+        } else {
+            workspace.risks().stream()
+                    .limit(5)
+                    .forEach(risk -> {
+                        addWrappedReportLine(lines, "- [" + risk.severity() + "] " + risk.title());
+                        addWrappedReportLine(lines, "  basis: " + risk.body());
+                        addWrappedReportLine(lines, "  suggested action: " + risk.action());
+                    });
+        }
+
+        addReportSection(lines, "Recent Activity");
+        if (workspace.activities().isEmpty()) {
+            addReportLine(lines, "- No activity logs recorded.");
+        } else {
+            workspace.activities().stream()
+                    .limit(6)
+                    .forEach(activity -> addWrappedReportLine(lines,
+                            "- " + activity.at() + " / " + activity.actor() + ": " + activity.summary()));
+        }
+
+        var stream = new StringBuilder("BT\n/F1 16 Tf\n50 790 Td\n");
         for (int index = 0; index < lines.size(); index++) {
             if (index == 1) {
-                stream.append("/F1 11 Tf\n");
+                stream.append("/F1 9 Tf\n");
             }
             if (index > 0) {
-                stream.append("0 -24 Td\n");
+                stream.append("0 -15 Td\n");
             }
             stream.append("(").append(pdfText(lines.get(index))).append(") Tj\n");
         }
         stream.append("ET");
         return minimalPdf(stream.toString());
+    }
+
+    private void addReportSection(List<String> lines, String title) {
+        addReportLine(lines, "");
+        addReportLine(lines, title);
+    }
+
+    private void addWrappedReportLine(List<String> lines, String value) {
+        var clean = textOrDash(value).replaceAll("\\s+", " ").trim();
+        var width = 92;
+        while (clean.length() > width) {
+            var splitAt = clean.lastIndexOf(' ', width);
+            if (splitAt < 40) {
+                splitAt = width;
+            }
+            addReportLine(lines, clean.substring(0, splitAt));
+            clean = clean.substring(splitAt).trim();
+        }
+        addReportLine(lines, clean);
+    }
+
+    private void addReportLine(List<String> lines, String value) {
+        if (lines.size() >= 51) {
+            return;
+        }
+        lines.add(value == null ? "" : value);
+    }
+
+    private long countTasksByStatus(WorkspaceState workspace, TaskStatus status) {
+        return workspace.tasks().stream()
+                .filter(task -> task.status() == status)
+                .count();
+    }
+
+    private long countOverdueTasks(WorkspaceState workspace) {
+        var today = LocalDate.now();
+        return workspace.tasks().stream()
+                .filter(task -> task.status() != TaskStatus.DONE)
+                .filter(task -> parseDateOrMax(task.dueDate()).isBefore(today))
+                .count();
+    }
+
+    private String textOrDash(String value) {
+        return value == null || value.isBlank() ? "-" : value.trim();
     }
 
     private byte[] minimalPdf(String contentStream) {

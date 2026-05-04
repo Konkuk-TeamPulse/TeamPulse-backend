@@ -5,9 +5,11 @@ import com.teampulse.backend.auth.domain.AuthUser;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Repository;
 
 @Repository
+@Profile("demo")
 public class InMemoryAuthUserRepository implements AuthUserRepository {
 
     private final AtomicLong ids = new AtomicLong(0);

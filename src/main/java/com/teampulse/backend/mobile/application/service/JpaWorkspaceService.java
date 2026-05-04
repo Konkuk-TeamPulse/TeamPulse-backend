@@ -1,6 +1,7 @@
 package com.teampulse.backend.mobile.application.service;
 
 
+import com.teampulse.backend.auth.domain.AuthUser;
 import com.teampulse.backend.mobile.application.WorkspaceService;
 import com.teampulse.backend.mobile.dto.*;
 import com.teampulse.backend.domain.task.TaskStatus;
@@ -21,6 +22,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 import org.springframework.context.annotation.Profile;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -52,6 +54,7 @@ public class JpaWorkspaceService implements WorkspaceService {
         workspace.setUserEmail("");
         workspace.setUserUniversity("");
         workspace.setUserPhone("");
+        workspace.setOwnerEmail(currentOwnerEmail());
         workspace.setTeamName("");
         workspace.setCourseName("");
         workspace.setSemester("2026-1");
@@ -78,6 +81,7 @@ public class JpaWorkspaceService implements WorkspaceService {
         validateOptionalLocalDate(request.startDate(), "Start date must use a real yyyy-MM-dd date.");
 
         var workspace = getOrCreateWorkspace();
+        workspace.setOwnerEmail(defaultText(currentOwnerEmail(), request.email().trim()));
         workspace.setInitialized(true);
         workspace.setUserName(request.name().trim());
         workspace.setUserEmail(request.email().trim());
@@ -104,6 +108,7 @@ public class JpaWorkspaceService implements WorkspaceService {
     @Override
     public WorkspaceState loadSample() {
         var workspace = getOrCreateWorkspace();
+        workspace.setOwnerEmail(defaultText(currentOwnerEmail(), "leader@teampulse.app"));
         workspace.setInitialized(true);
         workspace.setUserName("Kim");
         workspace.setUserEmail("leader@teampulse.app");
@@ -394,8 +399,13 @@ public class JpaWorkspaceService implements WorkspaceService {
     }
 
     private MobileWorkspaceEntity getOrCreateWorkspace() {
-        return workspaceRepository.findFirstByOrderByIdAsc()
-                .orElseGet(() -> workspaceRepository.saveAndFlush(emptyWorkspace()));
+        var ownerEmail = currentOwnerEmail();
+        if (!ownerEmail.isBlank()) {
+            return workspaceRepository.findFirstByOwnerEmailIgnoreCaseOrderByIdAsc(ownerEmail)
+                    .orElseGet(() -> workspaceRepository.saveAndFlush(emptyWorkspace(ownerEmail)));
+        }
+        return workspaceRepository.findFirstByOwnerEmailIgnoreCaseOrderByIdAsc("")
+                .orElseGet(() -> workspaceRepository.saveAndFlush(emptyWorkspace("")));
     }
 
     private WorkspaceState persistAndProject(MobileWorkspaceEntity workspace) {
@@ -477,6 +487,21 @@ public class JpaWorkspaceService implements WorkspaceService {
         workspace.setSemester("2026-1");
         workspace.setInviteCode(inviteCode());
         return workspace;
+    }
+
+    private MobileWorkspaceEntity emptyWorkspace(String ownerEmail) {
+        var workspace = emptyWorkspace();
+        workspace.setOwnerEmail(ownerEmail);
+        workspace.setUserEmail(ownerEmail);
+        return workspace;
+    }
+
+    private String currentOwnerEmail() {
+        var authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication != null && authentication.getPrincipal() instanceof AuthUser authUser) {
+            return defaultText(authUser.email(), "").toLowerCase();
+        }
+        return "";
     }
 
     private MobileMemberEntity member(MobileWorkspaceEntity workspace, String name, TeamRole role) {
