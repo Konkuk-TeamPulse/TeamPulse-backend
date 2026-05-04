@@ -9,6 +9,7 @@
 - 프로젝트 팀 관리 API는 `LEADER`만 호출할 수 있습니다.
 - 초대 수락자는 서버에서 항상 `MEMBER`로 저장됩니다.
 - 운영 환경에서는 OpenAPI 문서가 비공개일 수 있습니다.
+- 운영 환경에서는 legacy `/api/mobile/**` demo API가 기본 비공개일 수 있습니다. 프론트는 공식 `/api/projects/**`, `/api/tasks/**`, `/api/invitations/**`, `/api/reports/**` 계열을 기준으로 붙이면 됩니다.
 - 로그인 실패 제한은 동작하되, 서버가 오래 떠 있어도 실패 기록이 무한히 쌓이지 않도록 정리되었습니다.
 
 ## 신규 API
@@ -172,6 +173,17 @@ PDF 다운로드는 기존처럼 파일 다운로드로 처리하면 됩니다.
 - smoke 검증에서 사용한 임시 포트: `http://127.0.0.1:18084`
 
 프론트 `.env` 또는 API base URL은 실제 실행 중인 백엔드 포트에 맞춰야 합니다.
+
+## 출시 전 API 고정 기준
+
+현재부터는 API path, 요청 body, 응답 필드명을 추가 변경하지 않는 것을 기준으로 봅니다.
+프론트에서 새로 맞춰야 하는 변경은 아래 항목만 보면 됩니다.
+
+- 인증 필요한 API에는 `Authorization: Bearer ...`를 붙입니다.
+- access token 만료 시 `POST /api/auth/refresh`를 호출하고, 응답의 새 access/refresh token을 모두 저장합니다.
+- 프로젝트 생성/초대 수락 이후에는 응답 또는 `GET /api/projects`에서 받은 실제 `projectId`를 사용합니다.
+- `LEADER`가 아닌 사용자는 프로젝트 관리 버튼을 숨기고, `403`/`3008`은 권한 없음 안내로 처리합니다.
+- 출시 prod 환경에서 legacy `/api/mobile/**`가 막혀 있으면 공식 API로 전환해야 합니다.
 
 ## 이번 런타임 검증 결과
 

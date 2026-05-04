@@ -35,14 +35,17 @@ public class SecurityConfig {
             DemoAccessTokenAuthenticationFilter demoAccessTokenAuthenticationFilter,
             ObjectMapper objectMapper,
             @Value("${app.security.public-api-docs:true}") boolean publicApiDocs,
-            @Value("${app.security.public-roadmap:false}") boolean publicRoadmap
+            @Value("${app.security.public-roadmap:false}") boolean publicRoadmap,
+            @Value("${app.security.public-legacy-mobile-api:true}") boolean publicLegacyMobileApi
     ) throws Exception {
         var publicMatchers = new ArrayList<>(List.of(
                 "/api/health",
                 "/api/demo/**",
-                "/api/mobile/**",
                 "/api/auth/**"
         ));
+        if (publicLegacyMobileApi) {
+            publicMatchers.add("/api/mobile/**");
+        }
         if (publicApiDocs) {
             publicMatchers.add("/v3/api-docs/**");
         }

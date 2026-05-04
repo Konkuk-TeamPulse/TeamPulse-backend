@@ -96,6 +96,7 @@
 - `APP_LOGIN_MAX_TRACKED_EMAILS`
 - `SPRINGDOC_API_DOCS_ENABLED`
 - `APP_PUBLIC_API_DOCS`
+- `APP_PUBLIC_LEGACY_MOBILE_API`
 
 ## 프론트 수정 이유
 
@@ -128,7 +129,7 @@
 - 한글 폰트는 서버 OS의 한글 폰트 또는 `app.report.pdf.font-path` 설정값을 사용합니다. 배포 서버에 한글 폰트가 없으면 폰트 경로를 환경별로 지정해야 합니다.
 - MySQL 프로필은 Flyway migration + Hibernate `validate` 기반으로 전환했습니다.
 - Supabase 프로필은 아직 별도 PostgreSQL migration을 구성하지 않았고, 기존 Hibernate `ddl-auto=update` 설정을 유지합니다.
-- 운영 profile은 `application-prod.properties`를 사용하며 OpenAPI 공개를 기본 비활성화합니다.
+- 운영 profile은 `application-prod.properties`를 사용하며 OpenAPI 공개와 legacy `/api/mobile/**` 공개를 기본 비활성화합니다.
 - `prod` profile 단독 실행도 JPA 인증/워크스페이스 구현체를 사용합니다.
 
 ## 검증한 흐름
