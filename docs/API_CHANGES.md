@@ -2,6 +2,43 @@
 
 이 문서는 Notion API 명세와 실제 백엔드 구현이 어긋나지 않도록 변경된 API, 요청/응답, 인증, DB 저장 방식을 정리하는 기록입니다.
 
+## 먼저 읽을 요약
+
+이번 변경의 핵심은 "MySQL로 실제 데이터를 저장하는 상태에서, 프론트가 정상 사용자 흐름을 끝까지 탈 수 있게 백엔드 API를 안정화한 것"입니다.
+
+| 구분 | 기존 문제 | 변경 후 | 프론트 영향 | Notion/API 문서 반영 |
+| --- | --- | --- | --- | --- |
+| 회의 생성 | 프론트가 `decisions`를 배열로 보내면 500 발생 가능 | `string`과 `string[]` 모두 허용 | 현재 배열 payload 유지 가능 | `decisions` 타입 설명 수정 |
+| 초대 링크 | 초대 조회/수락이 현재 사용자 워크스페이스 기준이라 400 발생 | `inviteCode` 기준으로 조회/수락 | 수락 후 프로젝트 목록 재조회 필요 | 공개 조회/로그인 수락 구분 |
+| 태스크 의존관계 | `A -> B`, `B -> A` 순환 관계가 가능 | 순환 의존관계는 400, 코드 `3006` | 오류 메시지 표시만 하면 됨 | 오류 코드 표 반영 |
+| 리포트 목록 | 생성된 리포트 목록을 다시 조회할 API 부족 | `GET /api/projects/{projectId}/reports` 추가 | 리포트 화면에서 목록 조회 가능 | 신규 API 추가 |
+| 잘못된 요청 본문 | 잘못된 enum 값이 500으로 보일 수 있음 | 400, 코드 `2020`으로 처리 | 상태값은 `TODO/DOING/DONE`만 전송 | enum 값 명시 |
+| DB 스키마 | 초대 멤버와 워크스페이스 소유자 구분이 약함 | `members.email`, `workspaces.owner_email` 사용 | 직접 영향 없음 | DB 설계 문서 반영 |
+
+## 팀원이 바로 확인할 일
+
+### 프론트 담당
+
+- 회의 생성 시 `decisions: string[]`는 그대로 보내도 됩니다.
+- 태스크 상태값은 `TODO`, `DOING`, `DONE`만 보내야 합니다. `IN_PROGRESS`는 실패합니다.
+- 초대 수락 성공 후 `GET /api/projects`를 다시 호출해 프로젝트 목록을 갱신해야 합니다.
+- 리포트 히스토리가 필요하면 `GET /api/projects/{projectId}/reports`를 호출하면 됩니다.
+
+### API/Notion 문서 담당
+
+- 회의 생성 API의 `decisions` 타입을 `string | string[]` 또는 `string[] 권장`으로 수정합니다.
+- 초대 API를 `GET` 공개 조회, `POST accept` 로그인 필요로 분리해서 적습니다.
+- 리포트 목록 조회 API `GET /api/projects/{projectId}/reports`를 추가합니다.
+- 태스크 상태 enum을 `TODO`, `DOING`, `DONE`으로 명시합니다.
+- 오류 코드 `3006`에 "자기 자신/순환 태스크 의존관계 불가"를 포함합니다.
+
+### DB/백엔드 담당
+
+- MySQL 프로필 기준 주요 테이블은 `assignment2_*`, `users`, `auth_sessions`입니다.
+- 이번 변경으로 `assignment2_members.email` 컬럼이 추가되었습니다.
+- 이전 변경에서 `assignment2_workspaces.owner_email` 컬럼이 추가되었습니다.
+- Hibernate `ddl-auto=update`로 로컬 DB에는 자동 반영됩니다. 운영 DB를 따로 만들면 마이그레이션 SQL로 반영해야 합니다.
+
 ## 2026-05-04 백엔드 검증 및 DB 연동 보완
 
 ### 1. 회의 생성 API: `decisions` 배열 요청 허용
