@@ -1,8 +1,7 @@
 package com.teampulse.backend.mobile.api;
 
 import com.teampulse.backend.common.api.SpecResponse;
-import com.teampulse.backend.mobile.application.MobileMeetingUseCase;
-import com.teampulse.backend.mobile.application.WorkspaceQueryUseCase;
+import com.teampulse.backend.mobile.application.ProjectWorkspaceUseCase;
 import com.teampulse.backend.mobile.dto.CreateMeetingRequest;
 import com.teampulse.backend.mobile.dto.MeetingActionItemView;
 import com.teampulse.backend.mobile.dto.MeetingCreateSpecRequest;
@@ -24,22 +23,18 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/projects/{projectId}/meetings")
 public class ProjectMeetingApiController {
 
-    private static final long DEMO_PROJECT_ID = 1L;
     private static final String SUCCESS_MESSAGE = "\uC694\uCCAD\uC5D0 \uC131\uACF5\uD588\uC2B5\uB2C8\uB2E4.";
     private static final String MEETING_CREATED_MESSAGE = "\uD68C\uC758\uB85D\uC774 \uC0DD\uC131\uB418\uC5C8\uC2B5\uB2C8\uB2E4.";
 
-    private final WorkspaceQueryUseCase workspaceQueryUseCase;
-    private final MobileMeetingUseCase mobileMeetingUseCase;
+    private final ProjectWorkspaceUseCase projectWorkspaceUseCase;
 
-    public ProjectMeetingApiController(WorkspaceQueryUseCase workspaceQueryUseCase, MobileMeetingUseCase mobileMeetingUseCase) {
-        this.workspaceQueryUseCase = workspaceQueryUseCase;
-        this.mobileMeetingUseCase = mobileMeetingUseCase;
+    public ProjectMeetingApiController(ProjectWorkspaceUseCase projectWorkspaceUseCase) {
+        this.projectWorkspaceUseCase = projectWorkspaceUseCase;
     }
 
     @GetMapping
     public SpecResponse<List<MeetingSpecResponse>> listMeetings(@PathVariable long projectId) {
-        requireDemoProject(projectId);
-        var workspace = workspaceQueryUseCase.getWorkspace();
+        var workspace = projectWorkspaceUseCase.getProjectWorkspace(projectId);
         var meetings = workspace.meetings().stream()
                 .map(meeting -> MeetingSpecResponse.from(meeting, workspace.user().name()))
                 .toList();
@@ -51,8 +46,7 @@ public class ProjectMeetingApiController {
             @PathVariable long projectId,
             @Valid @RequestBody MeetingCreateSpecRequest request
     ) {
-        requireDemoProject(projectId);
-        var workspace = mobileMeetingUseCase.createMeeting(toCreateMeetingRequest(request));
+        var workspace = projectWorkspaceUseCase.createProjectMeeting(projectId, toCreateMeetingRequest(request));
         var meeting = latestMeeting(workspace);
         return SpecResponse.ok(MEETING_CREATED_MESSAGE, new MeetingCreateSpecResponse(
                 meeting.id(),
@@ -62,12 +56,12 @@ public class ProjectMeetingApiController {
 
     @GetMapping("/{meetingId}")
     public SpecResponse<MeetingSpecResponse> getMeeting(@PathVariable long projectId, @PathVariable long meetingId) {
-        requireDemoProject(projectId);
-        var meeting = workspaceQueryUseCase.getWorkspace().meetings().stream()
+        var workspace = projectWorkspaceUseCase.getProjectWorkspace(projectId);
+        var meeting = workspace.meetings().stream()
                 .filter(candidate -> candidate.id() == meetingId)
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("Meeting not found."));
-        return SpecResponse.ok(SUCCESS_MESSAGE, MeetingSpecResponse.from(meeting, workspaceQueryUseCase.getWorkspace().user().name()));
+        return SpecResponse.ok(SUCCESS_MESSAGE, MeetingSpecResponse.from(meeting, workspace.user().name()));
     }
 
     private MeetingView latestMeeting(WorkspaceState workspace) {
@@ -77,9 +71,12 @@ public class ProjectMeetingApiController {
     }
 
     private CreateMeetingRequest toCreateMeetingRequest(MeetingCreateSpecRequest request) {
-        var decisions = request.decisions() == null || request.decisions().isBlank()
+        var decisions = request.decisions() == null
                 ? List.<String>of()
-                : List.of(request.decisions().trim());
+                : request.decisions().stream()
+                .filter(decision -> decision != null && !decision.isBlank())
+                .map(String::trim)
+                .toList();
         var actions = request.actionItems() == null
                 ? List.<String>of()
                 : request.actionItems().stream()
@@ -103,9 +100,4 @@ public class ProjectMeetingApiController {
                 actionItems);
     }
 
-    private void requireDemoProject(long projectId) {
-        if (projectId != DEMO_PROJECT_ID) {
-            throw new IllegalArgumentException("Only demo project 1 is available in the MVP backend.");
-        }
-    }
 }

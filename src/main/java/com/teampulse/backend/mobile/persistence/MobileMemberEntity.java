@@ -34,6 +34,9 @@ public class MobileMemberEntity {
     @Column(nullable = false, length = 50)
     private String name;
 
+    @Column(nullable = false, length = 191, columnDefinition = "varchar(191) not null default ''")
+    private String email = "";
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private TeamRole role;

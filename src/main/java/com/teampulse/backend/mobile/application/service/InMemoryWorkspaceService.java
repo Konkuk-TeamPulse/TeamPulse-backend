@@ -11,7 +11,9 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicLong;
 import org.springframework.context.annotation.Profile;
@@ -32,6 +34,47 @@ public class InMemoryWorkspaceService implements WorkspaceService {
 
     public synchronized WorkspaceState getWorkspace() {
         return workspace;
+    }
+
+    @Override
+    public synchronized List<WorkspaceState> getProjectWorkspaces() {
+        return workspace.initialized() ? List.of(workspace) : List.of();
+    }
+
+    @Override
+    public synchronized WorkspaceState getProjectWorkspace(long projectId) {
+        requireProjectId(projectId);
+        ensureInitialized();
+        return workspace;
+    }
+
+    @Override
+    public synchronized WorkspaceState getProjectWorkspaceByTaskId(long taskId) {
+        requireTask(taskId);
+        return workspace;
+    }
+
+    @Override
+    public synchronized WorkspaceState getProjectWorkspaceByMeetingId(long meetingId) {
+        requireMeeting(meetingId);
+        return workspace;
+    }
+
+    @Override
+    public synchronized WorkspaceState getProjectWorkspaceByReportId(long reportId) {
+        requireReport(reportId);
+        return workspace;
+    }
+
+    @Override
+    public synchronized WorkspaceState createProjectWorkspace(BootstrapWorkspaceRequest request) {
+        return bootstrap(request);
+    }
+
+    @Override
+    public synchronized WorkspaceState resetProjectWorkspace(long projectId) {
+        requireProjectId(projectId);
+        return reset();
     }
 
     public synchronized WorkspaceState reset() {
@@ -221,6 +264,11 @@ public class InMemoryWorkspaceService implements WorkspaceService {
         ensureInitialized();
         requireText(request.title(), "Dependency title is required.");
         var dependency = request.title().trim();
+        var currentTarget = workspace.tasks().stream()
+                .filter(task -> task.id() == taskId)
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Task not found."));
+        rejectCyclicDependency(currentTarget, dependency);
         var tasks = new ArrayList<TaskView>();
         TaskView target = null;
         for (var task : workspace.tasks()) {
@@ -264,6 +312,67 @@ public class InMemoryWorkspaceService implements WorkspaceService {
         var activities = prependActivity(workspace.activities(), activity(workspace.user().name(), "Dependency removed from " + target.title() + "."));
         workspace = copy(workspace, tasks, workspace.meetings(), activities, workspace.reports(), workspace.members(), workspace.team());
         return recompute();
+    }
+
+    @Override
+    public synchronized WorkspaceState createProjectTask(long projectId, CreateTaskRequest request) {
+        requireProjectId(projectId);
+        return createTask(request);
+    }
+
+    @Override
+    public synchronized WorkspaceState updateProjectTask(long projectId, long taskId, UpdateTaskRequest request) {
+        requireProjectId(projectId);
+        return updateTask(taskId, request);
+    }
+
+    @Override
+    public synchronized WorkspaceState updateTaskById(long taskId, UpdateTaskRequest request) {
+        return updateTask(taskId, request);
+    }
+
+    @Override
+    public synchronized WorkspaceState updateProjectTaskStatus(long projectId, long taskId, UpdateTaskStatusRequest request) {
+        requireProjectId(projectId);
+        return updateTaskStatus(taskId, request);
+    }
+
+    @Override
+    public synchronized WorkspaceState updateTaskStatusById(long taskId, UpdateTaskStatusRequest request) {
+        return updateTaskStatus(taskId, request);
+    }
+
+    @Override
+    public synchronized WorkspaceState deleteProjectTask(long projectId, long taskId) {
+        requireProjectId(projectId);
+        return deleteTask(taskId);
+    }
+
+    @Override
+    public synchronized WorkspaceState deleteTaskById(long taskId) {
+        return deleteTask(taskId);
+    }
+
+    @Override
+    public synchronized WorkspaceState addProjectTaskDependency(long projectId, long taskId, TaskDependencyRequest request) {
+        requireProjectId(projectId);
+        return addTaskDependency(taskId, request);
+    }
+
+    @Override
+    public synchronized WorkspaceState addTaskDependencyById(long taskId, TaskDependencyRequest request) {
+        return addTaskDependency(taskId, request);
+    }
+
+    @Override
+    public synchronized WorkspaceState deleteProjectTaskDependency(long projectId, long taskId, String dependencyTitle) {
+        requireProjectId(projectId);
+        return deleteTaskDependency(taskId, dependencyTitle);
+    }
+
+    @Override
+    public synchronized WorkspaceState deleteTaskDependencyById(long taskId, String dependencyTitle) {
+        return deleteTaskDependency(taskId, dependencyTitle);
     }
 
     public synchronized WorkspaceState createMeeting(CreateMeetingRequest request) {
@@ -313,6 +422,18 @@ public class InMemoryWorkspaceService implements WorkspaceService {
         return recompute();
     }
 
+    @Override
+    public synchronized WorkspaceState createProjectMeeting(long projectId, CreateMeetingRequest request) {
+        requireProjectId(projectId);
+        return createMeeting(request);
+    }
+
+    @Override
+    public synchronized WorkspaceState generateProjectReport(long projectId) {
+        requireProjectId(projectId);
+        return generateReport();
+    }
+
     public synchronized WorkspaceState updateTeam(UpdateTeamRequest request) {
         ensureInitialized();
         requireText(request.name(), "Team name is required.");
@@ -348,6 +469,56 @@ public class InMemoryWorkspaceService implements WorkspaceService {
 
         var activities = prependActivity(workspace.activities(), activity(workspace.user().name(), "Invite code regenerated."));
         workspace = copy(workspace, workspace.tasks(), workspace.meetings(), activities, workspace.reports(), workspace.members(), team);
+        return recompute();
+    }
+
+    @Override
+    public synchronized WorkspaceState updateProjectTeam(long projectId, UpdateTeamRequest request) {
+        requireProjectId(projectId);
+        return updateTeam(request);
+    }
+
+    @Override
+    public synchronized WorkspaceState regenerateProjectInviteCode(long projectId) {
+        requireProjectId(projectId);
+        return regenerateInviteCode();
+    }
+
+    @Override
+    public synchronized WorkspaceState getWorkspaceByInviteCode(String inviteCode) {
+        ensureInitialized();
+        requireValidInviteCode(inviteCode);
+        return workspace;
+    }
+
+    @Override
+    public synchronized WorkspaceState acceptInvitation(String inviteCode, String memberName, String memberEmail, TeamRole role) {
+        ensureInitialized();
+        requireValidInviteCode(inviteCode);
+        requireText(memberName, "Member name is required.");
+        requireText(memberEmail, "Member email is required.");
+        var normalizedName = memberName.trim();
+        var normalizedEmail = memberEmail.trim().toLowerCase();
+        var duplicateEmail = workspace.members().stream().anyMatch(member -> member.email().equalsIgnoreCase(normalizedEmail));
+        if (duplicateEmail) {
+            return workspace;
+        }
+
+        var members = new ArrayList<>(workspace.members());
+        var claimedLegacyMember = false;
+        for (int index = 0; index < members.size(); index++) {
+            var member = members.get(index);
+            if (member.email().isBlank() && member.name().equalsIgnoreCase(normalizedName)) {
+                members.set(index, new MemberView(member.id(), normalizedName, normalizedEmail, role == null ? TeamRole.MEMBER : role));
+                claimedLegacyMember = true;
+                break;
+            }
+        }
+        if (!claimedLegacyMember) {
+            members.add(new MemberView(nextId(), normalizedName, normalizedEmail, role == null ? TeamRole.MEMBER : role));
+        }
+        var activities = prependActivity(workspace.activities(), activity(workspace.user().name(), normalizedName + " accepted invitation."));
+        workspace = copy(workspace, workspace.tasks(), workspace.meetings(), activities, workspace.reports(), members, workspace.team());
         return recompute();
     }
 
@@ -399,6 +570,18 @@ public class InMemoryWorkspaceService implements WorkspaceService {
         var activities = prependActivity(workspace.activities(), activity(workspace.user().name(), target.name() + " removed from team."));
         workspace = copy(workspace, workspace.tasks(), workspace.meetings(), activities, workspace.reports(), members, workspace.team());
         return recompute();
+    }
+
+    @Override
+    public synchronized WorkspaceState addProjectMember(long projectId, CreateMemberRequest request) {
+        requireProjectId(projectId);
+        return addMember(request);
+    }
+
+    @Override
+    public synchronized WorkspaceState deleteProjectMember(long projectId, long memberId) {
+        requireProjectId(projectId);
+        return deleteMember(memberId);
     }
 
     private WorkspaceState recompute() {
@@ -548,10 +731,77 @@ public class InMemoryWorkspaceService implements WorkspaceService {
         }
     }
 
+    private void requireValidInviteCode(String inviteCode) {
+        if (inviteCode == null || inviteCode.isBlank() || !workspace.team().inviteCode().equalsIgnoreCase(inviteCode.trim())) {
+            throw new IllegalArgumentException("Invitation is invalid or expired.");
+        }
+    }
+
+    private void rejectCyclicDependency(TaskView target, String dependencyTitle) {
+        if (target.title().equalsIgnoreCase(dependencyTitle)) {
+            throw new IllegalArgumentException("Task cannot depend on itself.");
+        }
+        var dependency = workspace.tasks().stream()
+                .filter(task -> task.title().equalsIgnoreCase(dependencyTitle))
+                .findFirst();
+        if (dependency.isPresent() && dependsOn(dependency.get(), target.title(), new HashSet<>())) {
+            throw new IllegalArgumentException("Task dependency cycle is not allowed.");
+        }
+    }
+
+    private boolean dependsOn(TaskView source, String targetTitle, Set<String> visitedTitles) {
+        if (!visitedTitles.add(source.title().toLowerCase())) {
+            return false;
+        }
+        for (var blocker : safeList(source.blockers())) {
+            if (blocker.equalsIgnoreCase(targetTitle)) {
+                return true;
+            }
+            var blockerTask = workspace.tasks().stream()
+                    .filter(task -> task.title().equalsIgnoreCase(blocker))
+                    .findFirst();
+            if (blockerTask.isPresent() && dependsOn(blockerTask.get(), targetTitle, visitedTitles)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private void ensureInitialized() {
         if (!workspace.initialized()) {
             throw new IllegalArgumentException("Workspace is not initialized yet.");
         }
+    }
+
+    private void requireProjectId(long projectId) {
+        if (projectId != workspace.projectId()) {
+            throw new IllegalArgumentException("Project not found.");
+        }
+        ensureInitialized();
+    }
+
+    private TaskView requireTask(long taskId) {
+        ensureInitialized();
+        return workspace.tasks().stream()
+                .filter(task -> task.id() == taskId)
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Task not found."));
+    }
+
+    private MeetingView requireMeeting(long meetingId) {
+        ensureInitialized();
+        return workspace.meetings().stream()
+                .filter(meeting -> meeting.id() == meetingId)
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Meeting not found."));
+    }
+
+    private ReportView requireReport(long reportId) {
+        ensureInitialized();
+        return workspace.reports().stream()
+                .filter(report -> report.id() == reportId)
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Report not found."));
     }
 
     private void validateLocalDate(String value, String message) {

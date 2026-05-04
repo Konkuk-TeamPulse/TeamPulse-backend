@@ -5,6 +5,7 @@ import java.util.List;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -20,7 +21,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 })
 public class MobileSpecExceptionHandler {
 
-    private static final String VALIDATION_MESSAGE = "요청 값이 잘못되었습니다.";
+    private static final String VALIDATION_MESSAGE = "요청 값이 올바르지 않습니다.";
 
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<SpecResponse<Void>> handleIllegalArgument(IllegalArgumentException exception) {
@@ -40,8 +41,15 @@ public class MobileSpecExceptionHandler {
                 .body(SpecResponse.fail(2020, validationMessage(errors), new ValidationErrorResponse(errors)));
     }
 
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<SpecResponse<Void>> handleUnreadableMessage(HttpMessageNotReadableException exception) {
+        return ResponseEntity.badRequest()
+                .body(SpecResponse.fail(2020, "요청 본문이 올바르지 않습니다.", null));
+    }
+
     private int responseCode(String message) {
-        if ("Task cannot depend on itself.".equals(message)) {
+        if ("Task cannot depend on itself.".equals(message)
+                || "Task dependency cycle is not allowed.".equals(message)) {
             return 3006;
         }
         if ("Task not found.".equals(message)) {
@@ -66,8 +74,11 @@ public class MobileSpecExceptionHandler {
         if ("Task cannot depend on itself.".equals(message)) {
             return "자기 자신을 선행 태스크로 설정할 수 없습니다.";
         }
+        if ("Task dependency cycle is not allowed.".equals(message)) {
+            return "순환되는 태스크 의존관계는 설정할 수 없습니다.";
+        }
         if ("Report data is insufficient.".equals(message)) {
-            return "\uB9AC\uD3EC\uD2B8\uB97C \uC0DD\uC131\uD560 \uD65C\uB3D9 \uAE30\uB85D\uC774 \uBD80\uC871\uD569\uB2C8\uB2E4.";
+            return "리포트를 생성할 활동 기록이 부족합니다.";
         }
         return message == null || message.isBlank() ? VALIDATION_MESSAGE : message;
     }
