@@ -1,7 +1,7 @@
 package com.teampulse.backend.mobile.api;
 
 import com.teampulse.backend.common.api.SpecResponse;
-import com.teampulse.backend.mobile.application.WorkspaceQueryUseCase;
+import com.teampulse.backend.mobile.application.ProjectWorkspaceUseCase;
 import com.teampulse.backend.mobile.dto.MeetingActionItemResponse;
 import com.teampulse.backend.mobile.dto.MeetingAttendeeResponse;
 import com.teampulse.backend.mobile.dto.MeetingDetailResponse;
@@ -21,18 +21,17 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/meetings")
 public class MeetingApiController {
 
-    private static final long DEMO_PROJECT_ID = 1L;
     private static final String SUCCESS_MESSAGE = "\uC694\uCCAD\uC5D0 \uC131\uACF5\uD588\uC2B5\uB2C8\uB2E4.";
 
-    private final WorkspaceQueryUseCase workspaceQueryUseCase;
+    private final ProjectWorkspaceUseCase projectWorkspaceUseCase;
 
-    public MeetingApiController(WorkspaceQueryUseCase workspaceQueryUseCase) {
-        this.workspaceQueryUseCase = workspaceQueryUseCase;
+    public MeetingApiController(ProjectWorkspaceUseCase projectWorkspaceUseCase) {
+        this.projectWorkspaceUseCase = projectWorkspaceUseCase;
     }
 
     @GetMapping("/{meetingId}")
     public SpecResponse<MeetingDetailResponse> getMeeting(@PathVariable long meetingId) {
-        var workspace = workspaceQueryUseCase.getWorkspace();
+        var workspace = projectWorkspaceUseCase.getProjectWorkspaceByMeetingId(meetingId);
         var meeting = workspace.meetings().stream()
                 .filter(candidate -> candidate.id() == meetingId)
                 .findFirst()
@@ -45,7 +44,7 @@ public class MeetingApiController {
                 .collect(Collectors.toMap(MemberView::id, Function.identity()));
         return new MeetingDetailResponse(
                 meeting.id(),
-                DEMO_PROJECT_ID,
+                workspace.projectId(),
                 meeting.title(),
                 meeting.time(),
                 meeting.agenda(),

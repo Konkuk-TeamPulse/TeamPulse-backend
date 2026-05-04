@@ -1,8 +1,7 @@
 package com.teampulse.backend.mobile.api;
 
 import com.teampulse.backend.common.api.SpecResponse;
-import com.teampulse.backend.mobile.application.MobileTaskUseCase;
-import com.teampulse.backend.mobile.application.WorkspaceQueryUseCase;
+import com.teampulse.backend.mobile.application.ProjectWorkspaceUseCase;
 import com.teampulse.backend.mobile.dto.MemberView;
 import com.teampulse.backend.mobile.dto.TaskDependencyRequest;
 import com.teampulse.backend.mobile.dto.TaskDependencySpecRequest;
@@ -34,12 +33,10 @@ public class TaskApiController {
     private static final String TASK_DEPENDENCY_ADDED_MESSAGE = "\uD0DC\uC2A4\uD06C \uC758\uC874\uAD00\uACC4\uAC00 \uCD94\uAC00\uB418\uC5C8\uC2B5\uB2C8\uB2E4.";
     private static final String TASK_DEPENDENCY_DELETED_MESSAGE = "\uD0DC\uC2A4\uD06C \uC758\uC874\uAD00\uACC4\uAC00 \uC0AD\uC81C\uB418\uC5C8\uC2B5\uB2C8\uB2E4.";
 
-    private final WorkspaceQueryUseCase workspaceQueryUseCase;
-    private final MobileTaskUseCase mobileTaskUseCase;
+    private final ProjectWorkspaceUseCase projectWorkspaceUseCase;
 
-    public TaskApiController(WorkspaceQueryUseCase workspaceQueryUseCase, MobileTaskUseCase mobileTaskUseCase) {
-        this.workspaceQueryUseCase = workspaceQueryUseCase;
-        this.mobileTaskUseCase = mobileTaskUseCase;
+    public TaskApiController(ProjectWorkspaceUseCase projectWorkspaceUseCase) {
+        this.projectWorkspaceUseCase = projectWorkspaceUseCase;
     }
 
     @PatchMapping("/{taskId}")
@@ -47,8 +44,9 @@ public class TaskApiController {
             @PathVariable long taskId,
             @Valid @RequestBody TaskUpdateSpecRequest request
     ) {
-        var owner = request.assigneeId() == null ? null : requireMemberById(workspaceQueryUseCase.getWorkspace(), request.assigneeId()).name();
-        var updated = mobileTaskUseCase.updateTask(taskId, new UpdateTaskRequest(
+        var workspace = projectWorkspaceUseCase.getProjectWorkspaceByTaskId(taskId);
+        var owner = request.assigneeId() == null ? null : requireMemberById(workspace, request.assigneeId()).name();
+        var updated = projectWorkspaceUseCase.updateTaskById(taskId, new UpdateTaskRequest(
                 request.title(),
                 owner,
                 null,
@@ -67,7 +65,7 @@ public class TaskApiController {
 
     @DeleteMapping("/{taskId}")
     public SpecResponse<Void> deleteTask(@PathVariable long taskId) {
-        mobileTaskUseCase.deleteTask(taskId);
+        projectWorkspaceUseCase.deleteTaskById(taskId);
         return SpecResponse.ok(TASK_DELETED_MESSAGE, null);
     }
 
@@ -76,7 +74,7 @@ public class TaskApiController {
             @PathVariable long taskId,
             @Valid @RequestBody UpdateTaskStatusRequest request
     ) {
-        var updated = mobileTaskUseCase.updateTaskStatus(taskId, request);
+        var updated = projectWorkspaceUseCase.updateTaskStatusById(taskId, request);
         var task = requireTaskById(updated, taskId);
         return SpecResponse.ok(TASK_STATUS_UPDATED_MESSAGE, new TaskStatusSpecResponse(task.id(), task.status()));
     }
@@ -86,22 +84,22 @@ public class TaskApiController {
             @PathVariable long taskId,
             @Valid @RequestBody TaskDependencySpecRequest request
     ) {
-        var workspace = workspaceQueryUseCase.getWorkspace();
+        var workspace = projectWorkspaceUseCase.getProjectWorkspaceByTaskId(taskId);
         var task = requireTaskById(workspace, taskId);
         var precedingTask = requireTaskById(workspace, request.precedingTaskId());
         if (task.id() == precedingTask.id()) {
             throw new IllegalArgumentException("Task cannot depend on itself.");
         }
-        mobileTaskUseCase.addTaskDependency(taskId, new TaskDependencyRequest(precedingTask.title()));
+        projectWorkspaceUseCase.addTaskDependencyById(taskId, new TaskDependencyRequest(precedingTask.title()));
         return SpecResponse.ok(TASK_DEPENDENCY_ADDED_MESSAGE, new TaskDependencySpecResponse(taskId, precedingTask.id()));
     }
 
     @DeleteMapping("/{taskId}/dependencies/{dependencyId}")
     public SpecResponse<Void> deleteDependency(@PathVariable long taskId, @PathVariable long dependencyId) {
-        var workspace = workspaceQueryUseCase.getWorkspace();
+        var workspace = projectWorkspaceUseCase.getProjectWorkspaceByTaskId(taskId);
         requireTaskById(workspace, taskId);
         var precedingTask = requireTaskById(workspace, dependencyId);
-        mobileTaskUseCase.deleteTaskDependency(taskId, precedingTask.title());
+        projectWorkspaceUseCase.deleteTaskDependencyById(taskId, precedingTask.title());
         return SpecResponse.ok(TASK_DEPENDENCY_DELETED_MESSAGE, null);
     }
 

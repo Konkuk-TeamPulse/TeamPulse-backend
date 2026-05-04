@@ -24,7 +24,6 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/invitations")
 public class InvitationApiController {
 
-    private static final long DEMO_PROJECT_ID = 1L;
     private static final String SUCCESS_MESSAGE = "\uC694\uCCAD\uC5D0 \uC131\uACF5\uD588\uC2B5\uB2C8\uB2E4.";
 
     private final MobileInvitationUseCase mobileInvitationUseCase;
@@ -38,7 +37,7 @@ public class InvitationApiController {
         var workspace = mobileInvitationUseCase.getWorkspaceByInviteCode(token);
         return SpecResponse.ok(SUCCESS_MESSAGE, new InvitationInfoResponse(
                 token,
-                DEMO_PROJECT_ID,
+                workspace.projectId(),
                 workspace.team().name(),
                 workspace.team().courseName(),
                 workspace.user().name(),
@@ -58,12 +57,15 @@ public class InvitationApiController {
         var role = request == null || request.role() == null ? TeamRole.MEMBER : request.role();
         var updatedWorkspace = mobileInvitationUseCase.acceptInvitation(token, memberName, authUser.email(), role);
         var member = updatedWorkspace.members().stream()
-                .filter(candidate -> candidate.name().equalsIgnoreCase(memberName))
-                .max(Comparator.comparingLong(MemberView::id))
+                .filter(candidate -> candidate.email().equalsIgnoreCase(authUser.email()))
+                .findFirst()
+                .or(() -> updatedWorkspace.members().stream()
+                        .filter(candidate -> candidate.name().equalsIgnoreCase(memberName))
+                        .max(Comparator.comparingLong(MemberView::id)))
                 .orElseThrow(() -> new IllegalArgumentException("Member not found."));
         return SpecResponse.ok(SUCCESS_MESSAGE, new InvitationAcceptResponse(
                 member.id(),
-                DEMO_PROJECT_ID,
+                updatedWorkspace.projectId(),
                 updatedWorkspace.team().name(),
                 authUser.id(),
                 member.role(),

@@ -10,6 +10,8 @@ public interface MobileWorkspaceRepository extends JpaRepository<MobileWorkspace
 
     Optional<MobileWorkspaceEntity> findFirstByOwnerEmailIgnoreCaseOrderByIdAsc(String ownerEmail);
 
+    Optional<MobileWorkspaceEntity> findFirstByOwnerEmailIgnoreCaseAndInitializedFalseOrderByIdAsc(String ownerEmail);
+
     Optional<MobileWorkspaceEntity> findFirstByInviteCodeIgnoreCaseAndInitializedTrueOrderByIdAsc(String inviteCode);
 
     @Query("""
@@ -21,4 +23,17 @@ public interface MobileWorkspaceRepository extends JpaRepository<MobileWorkspace
             order by workspace.id asc
             """)
     List<MobileWorkspaceEntity> findInitializedByMemberEmail(@Param("email") String email);
+
+    @Query("""
+            select distinct workspace
+            from MobileWorkspaceEntity workspace
+            left join workspace.members member
+            where workspace.initialized = true
+              and (
+                lower(workspace.ownerEmail) = lower(:email)
+                or lower(member.email) = lower(:email)
+              )
+            order by workspace.id asc
+            """)
+    List<MobileWorkspaceEntity> findAccessibleInitializedByEmail(@Param("email") String email);
 }
