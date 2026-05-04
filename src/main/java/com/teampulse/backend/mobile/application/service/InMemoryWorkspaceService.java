@@ -11,7 +11,9 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicLong;
 import org.springframework.context.annotation.Profile;
@@ -221,6 +223,11 @@ public class InMemoryWorkspaceService implements WorkspaceService {
         ensureInitialized();
         requireText(request.title(), "Dependency title is required.");
         var dependency = request.title().trim();
+        var currentTarget = workspace.tasks().stream()
+                .filter(task -> task.id() == taskId)
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Task not found."));
+        rejectCyclicDependency(currentTarget, dependency);
         var tasks = new ArrayList<TaskView>();
         TaskView target = null;
         for (var task : workspace.tasks()) {
@@ -348,6 +355,31 @@ public class InMemoryWorkspaceService implements WorkspaceService {
 
         var activities = prependActivity(workspace.activities(), activity(workspace.user().name(), "Invite code regenerated."));
         workspace = copy(workspace, workspace.tasks(), workspace.meetings(), activities, workspace.reports(), workspace.members(), team);
+        return recompute();
+    }
+
+    @Override
+    public synchronized WorkspaceState getWorkspaceByInviteCode(String inviteCode) {
+        ensureInitialized();
+        requireValidInviteCode(inviteCode);
+        return workspace;
+    }
+
+    @Override
+    public synchronized WorkspaceState acceptInvitation(String inviteCode, String memberName, String memberEmail, TeamRole role) {
+        ensureInitialized();
+        requireValidInviteCode(inviteCode);
+        requireText(memberName, "Member name is required.");
+        var normalizedName = memberName.trim();
+        var duplicate = workspace.members().stream().anyMatch(member -> member.name().equalsIgnoreCase(normalizedName));
+        if (duplicate) {
+            return workspace;
+        }
+
+        var members = new ArrayList<>(workspace.members());
+        members.add(new MemberView(nextId(), normalizedName, role == null ? TeamRole.MEMBER : role));
+        var activities = prependActivity(workspace.activities(), activity(workspace.user().name(), normalizedName + " accepted invitation."));
+        workspace = copy(workspace, workspace.tasks(), workspace.meetings(), activities, workspace.reports(), members, workspace.team());
         return recompute();
     }
 
@@ -546,6 +578,42 @@ public class InMemoryWorkspaceService implements WorkspaceService {
         if (!exists) {
             throw new IllegalArgumentException(message);
         }
+    }
+
+    private void requireValidInviteCode(String inviteCode) {
+        if (inviteCode == null || inviteCode.isBlank() || !workspace.team().inviteCode().equalsIgnoreCase(inviteCode.trim())) {
+            throw new IllegalArgumentException("Invitation is invalid or expired.");
+        }
+    }
+
+    private void rejectCyclicDependency(TaskView target, String dependencyTitle) {
+        if (target.title().equalsIgnoreCase(dependencyTitle)) {
+            throw new IllegalArgumentException("Task cannot depend on itself.");
+        }
+        var dependency = workspace.tasks().stream()
+                .filter(task -> task.title().equalsIgnoreCase(dependencyTitle))
+                .findFirst();
+        if (dependency.isPresent() && dependsOn(dependency.get(), target.title(), new HashSet<>())) {
+            throw new IllegalArgumentException("Task dependency cycle is not allowed.");
+        }
+    }
+
+    private boolean dependsOn(TaskView source, String targetTitle, Set<String> visitedTitles) {
+        if (!visitedTitles.add(source.title().toLowerCase())) {
+            return false;
+        }
+        for (var blocker : safeList(source.blockers())) {
+            if (blocker.equalsIgnoreCase(targetTitle)) {
+                return true;
+            }
+            var blockerTask = workspace.tasks().stream()
+                    .filter(task -> task.title().equalsIgnoreCase(blocker))
+                    .findFirst();
+            if (blockerTask.isPresent() && dependsOn(blockerTask.get(), targetTitle, visitedTitles)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void ensureInitialized() {

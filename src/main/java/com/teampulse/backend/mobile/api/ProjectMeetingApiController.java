@@ -77,9 +77,12 @@ public class ProjectMeetingApiController {
     }
 
     private CreateMeetingRequest toCreateMeetingRequest(MeetingCreateSpecRequest request) {
-        var decisions = request.decisions() == null || request.decisions().isBlank()
+        var decisions = request.decisions() == null
                 ? List.<String>of()
-                : List.of(request.decisions().trim());
+                : request.decisions().stream()
+                .filter(decision -> decision != null && !decision.isBlank())
+                .map(String::trim)
+                .toList();
         var actions = request.actionItems() == null
                 ? List.<String>of()
                 : request.actionItems().stream()

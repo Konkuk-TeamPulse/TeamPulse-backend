@@ -2,10 +2,8 @@ package com.teampulse.backend.mobile.api;
 
 import com.teampulse.backend.auth.domain.AuthUser;
 import com.teampulse.backend.common.api.SpecResponse;
+import com.teampulse.backend.mobile.application.MobileInvitationUseCase;
 import com.teampulse.backend.domain.team.TeamRole;
-import com.teampulse.backend.mobile.application.MobileMemberUseCase;
-import com.teampulse.backend.mobile.application.WorkspaceQueryUseCase;
-import com.teampulse.backend.mobile.dto.CreateMemberRequest;
 import com.teampulse.backend.mobile.dto.InvitationAcceptRequest;
 import com.teampulse.backend.mobile.dto.InvitationAcceptResponse;
 import com.teampulse.backend.mobile.dto.InvitationInfoResponse;
@@ -29,18 +27,15 @@ public class InvitationApiController {
     private static final long DEMO_PROJECT_ID = 1L;
     private static final String SUCCESS_MESSAGE = "\uC694\uCCAD\uC5D0 \uC131\uACF5\uD588\uC2B5\uB2C8\uB2E4.";
 
-    private final WorkspaceQueryUseCase workspaceQueryUseCase;
-    private final MobileMemberUseCase mobileMemberUseCase;
+    private final MobileInvitationUseCase mobileInvitationUseCase;
 
-    public InvitationApiController(WorkspaceQueryUseCase workspaceQueryUseCase, MobileMemberUseCase mobileMemberUseCase) {
-        this.workspaceQueryUseCase = workspaceQueryUseCase;
-        this.mobileMemberUseCase = mobileMemberUseCase;
+    public InvitationApiController(MobileInvitationUseCase mobileInvitationUseCase) {
+        this.mobileInvitationUseCase = mobileInvitationUseCase;
     }
 
     @GetMapping("/{token}")
     public SpecResponse<InvitationInfoResponse> getInvitation(@PathVariable String token) {
-        var workspace = workspaceQueryUseCase.getWorkspace();
-        requireValidToken(token, workspace.team().inviteCode());
+        var workspace = mobileInvitationUseCase.getWorkspaceByInviteCode(token);
         return SpecResponse.ok(SUCCESS_MESSAGE, new InvitationInfoResponse(
                 token,
                 DEMO_PROJECT_ID,
@@ -58,12 +53,10 @@ public class InvitationApiController {
             Authentication authentication,
             @Valid @RequestBody(required = false) InvitationAcceptRequest request
     ) {
-        var workspace = workspaceQueryUseCase.getWorkspace();
-        requireValidToken(token, workspace.team().inviteCode());
         var authUser = requireAuthUser(authentication);
         var memberName = defaultText(request == null ? null : request.name(), authUser.name());
         var role = request == null || request.role() == null ? TeamRole.MEMBER : request.role();
-        var updatedWorkspace = mobileMemberUseCase.addMember(new CreateMemberRequest(memberName, role));
+        var updatedWorkspace = mobileInvitationUseCase.acceptInvitation(token, memberName, authUser.email(), role);
         var member = updatedWorkspace.members().stream()
                 .filter(candidate -> candidate.name().equalsIgnoreCase(memberName))
                 .max(Comparator.comparingLong(MemberView::id))
@@ -75,12 +68,6 @@ public class InvitationApiController {
                 authUser.id(),
                 member.role(),
                 LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS).toString()));
-    }
-
-    private void requireValidToken(String token, String inviteCode) {
-        if (inviteCode == null || inviteCode.isBlank() || !inviteCode.equals(token)) {
-            throw new IllegalArgumentException("Invitation is invalid or expired.");
-        }
     }
 
     private AuthUser requireAuthUser(Authentication authentication) {

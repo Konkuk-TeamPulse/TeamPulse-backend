@@ -44,24 +44,27 @@ public class SecurityConfig {
                         .authenticationEntryPoint((request, response, authException) -> writeAuthenticationRequired(response, objectMapper))
                         .accessDeniedHandler((request, response, accessDeniedException) -> writeAuthenticationRequired(response, objectMapper)))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(HttpMethod.GET, "/api/projects")
-                        .authenticated()
-                        .requestMatchers(HttpMethod.POST, "/api/projects/*/invitations", "/api/projects/*/invite-links")
-                        .authenticated()
-                        .requestMatchers(HttpMethod.POST, "/api/invitations/*/accept")
-                        .authenticated()
                         .requestMatchers(
                                 "/api/health",
                                 "/api/roadmap",
                                 "/api/demo/**",
                                 "/api/mobile/**",
-                                "/api/auth/**",
+                                "/api/auth/**"
+                        )
+                        .permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/invitations/*")
+                        .permitAll()
+                        .requestMatchers(
+                                "/api/users/me",
                                 "/api/account",
                                 "/api/account/**",
                                 "/api/projects/**",
+                                "/api/tasks/**",
+                                "/api/meetings/**",
+                                "/api/reports/**",
                                 "/api/invitations/**"
                         )
-                        .permitAll()
+                        .authenticated()
                         .anyRequest()
                         .authenticated())
                 .addFilterBefore(demoAccessTokenAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);

@@ -1,6 +1,7 @@
 package com.teampulse.backend.mobile.application.service;
 
 
+import com.teampulse.backend.auth.domain.AuthUser;
 import com.teampulse.backend.mobile.application.WorkspaceService;
 import com.teampulse.backend.mobile.dto.*;
 import com.teampulse.backend.domain.task.TaskStatus;
@@ -18,9 +19,12 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 import org.springframework.context.annotation.Profile;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -52,6 +56,7 @@ public class JpaWorkspaceService implements WorkspaceService {
         workspace.setUserEmail("");
         workspace.setUserUniversity("");
         workspace.setUserPhone("");
+        workspace.setOwnerEmail(currentOwnerEmail());
         workspace.setTeamName("");
         workspace.setCourseName("");
         workspace.setSemester("2026-1");
@@ -78,6 +83,7 @@ public class JpaWorkspaceService implements WorkspaceService {
         validateOptionalLocalDate(request.startDate(), "Start date must use a real yyyy-MM-dd date.");
 
         var workspace = getOrCreateWorkspace();
+        workspace.setOwnerEmail(defaultText(currentOwnerEmail(), request.email().trim()));
         workspace.setInitialized(true);
         workspace.setUserName(request.name().trim());
         workspace.setUserEmail(request.email().trim());
@@ -96,7 +102,7 @@ public class JpaWorkspaceService implements WorkspaceService {
         workspace.getActivities().clear();
         workspace.getReports().clear();
 
-        workspace.getMembers().add(member(workspace, request.name().trim(), TeamRole.LEADER));
+        workspace.getMembers().add(member(workspace, request.name().trim(), request.email().trim(), TeamRole.LEADER));
         workspace.getActivities().add(activity(workspace, request.name().trim(), request.teamName().trim() + " workspace started."));
         return persistAndProject(workspace);
     }
@@ -104,6 +110,7 @@ public class JpaWorkspaceService implements WorkspaceService {
     @Override
     public WorkspaceState loadSample() {
         var workspace = getOrCreateWorkspace();
+        workspace.setOwnerEmail(defaultText(currentOwnerEmail(), "leader@teampulse.app"));
         workspace.setInitialized(true);
         workspace.setUserName("Kim");
         workspace.setUserEmail("leader@teampulse.app");
@@ -122,8 +129,8 @@ public class JpaWorkspaceService implements WorkspaceService {
         workspace.getActivities().clear();
         workspace.getReports().clear();
 
-        workspace.getMembers().add(member(workspace, "Kim", TeamRole.LEADER));
-        workspace.getMembers().add(member(workspace, "Min", TeamRole.MEMBER));
+        workspace.getMembers().add(member(workspace, "Kim", "leader@teampulse.app", TeamRole.LEADER));
+        workspace.getMembers().add(member(workspace, "Min", "", TeamRole.MEMBER));
         workspace.getTasks().add(task(workspace, "Read AI coding tool guide", "Kim", "2026-04-08", List.of(), TaskStatus.DOING));
         workspace.getTasks().add(task(workspace, "Build mobile-first UI", "Min", "2026-04-09", List.of("Read AI coding tool guide"), TaskStatus.TODO));
         workspace.getTasks().add(task(workspace, "Prepare weekly report", "Kim", "2026-04-10", List.of(), TaskStatus.DONE));
@@ -251,6 +258,7 @@ public class JpaWorkspaceService implements WorkspaceService {
         requireText(request.title(), "Dependency title is required.");
         var target = findTask(workspace, taskId);
         var dependency = request.title().trim();
+        rejectCyclicDependency(workspace, target, dependency);
         var blockers = new ArrayList<>(safeList(target.getBlockers()));
         if (!blockers.contains(dependency)) {
             blockers.add(dependency);
@@ -339,6 +347,34 @@ public class JpaWorkspaceService implements WorkspaceService {
     }
 
     @Override
+    public WorkspaceState getWorkspaceByInviteCode(String inviteCode) {
+        requireText(inviteCode, "Invitation code is required.");
+        return toWorkspaceState(findWorkspaceByInviteCode(inviteCode));
+    }
+
+    @Override
+    public WorkspaceState acceptInvitation(String inviteCode, String memberName, String memberEmail, TeamRole role) {
+        requireText(inviteCode, "Invitation code is required.");
+        requireText(memberName, "Member name is required.");
+        requireText(memberEmail, "Member email is required.");
+        var workspace = findWorkspaceByInviteCode(inviteCode);
+        var normalizedEmail = memberEmail.trim().toLowerCase();
+        var normalizedName = memberName.trim();
+
+        var existing = workspace.getMembers().stream()
+                .filter(member -> member.getEmail().equalsIgnoreCase(normalizedEmail)
+                        || member.getName().equalsIgnoreCase(normalizedName))
+                .findFirst();
+        if (existing.isPresent()) {
+            return toWorkspaceState(workspace);
+        }
+
+        workspace.getMembers().add(member(workspace, normalizedName, normalizedEmail, role == null ? TeamRole.MEMBER : role));
+        workspace.getActivities().add(activity(workspace, workspace.getUserName(), normalizedName + " accepted invitation."));
+        return persistAndProject(workspace);
+    }
+
+    @Override
     public WorkspaceState addMember(CreateMemberRequest request) {
         var workspace = requireInitializedWorkspace();
         requireText(request.name(), "Member name is required.");
@@ -393,9 +429,57 @@ public class JpaWorkspaceService implements WorkspaceService {
                 .orElseThrow(() -> new IllegalArgumentException("Task not found."));
     }
 
+    private void rejectCyclicDependency(MobileWorkspaceEntity workspace, MobileTaskEntity target, String dependencyTitle) {
+        if (target.getTitle().equalsIgnoreCase(dependencyTitle)) {
+            throw new IllegalArgumentException("Task cannot depend on itself.");
+        }
+        var dependency = workspace.getTasks().stream()
+                .filter(task -> task.getTitle().equalsIgnoreCase(dependencyTitle))
+                .findFirst();
+        if (dependency.isPresent() && dependsOn(workspace, dependency.get(), target.getTitle(), new HashSet<>())) {
+            throw new IllegalArgumentException("Task dependency cycle is not allowed.");
+        }
+    }
+
+    private boolean dependsOn(MobileWorkspaceEntity workspace, MobileTaskEntity source, String targetTitle, Set<String> visitedTitles) {
+        if (!visitedTitles.add(source.getTitle().toLowerCase())) {
+            return false;
+        }
+        for (var blocker : safeList(source.getBlockers())) {
+            if (blocker.equalsIgnoreCase(targetTitle)) {
+                return true;
+            }
+            var blockerTask = workspace.getTasks().stream()
+                    .filter(task -> task.getTitle().equalsIgnoreCase(blocker))
+                    .findFirst();
+            if (blockerTask.isPresent() && dependsOn(workspace, blockerTask.get(), targetTitle, visitedTitles)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private MobileWorkspaceEntity findWorkspaceByInviteCode(String inviteCode) {
+        return workspaceRepository.findFirstByInviteCodeIgnoreCaseAndInitializedTrueOrderByIdAsc(inviteCode.trim())
+                .orElseThrow(() -> new IllegalArgumentException("Invitation is invalid or expired."));
+    }
+
     private MobileWorkspaceEntity getOrCreateWorkspace() {
-        return workspaceRepository.findFirstByOrderByIdAsc()
-                .orElseGet(() -> workspaceRepository.saveAndFlush(emptyWorkspace()));
+        var ownerEmail = currentOwnerEmail();
+        if (!ownerEmail.isBlank()) {
+            var ownerWorkspace = workspaceRepository.findFirstByOwnerEmailIgnoreCaseOrderByIdAsc(ownerEmail);
+            if (ownerWorkspace.isPresent() && ownerWorkspace.get().isInitialized()) {
+                return ownerWorkspace.get();
+            }
+            var invitedWorkspace = workspaceRepository.findInitializedByMemberEmail(ownerEmail).stream()
+                    .findFirst();
+            if (invitedWorkspace.isPresent()) {
+                return invitedWorkspace.get();
+            }
+            return ownerWorkspace.orElseGet(() -> workspaceRepository.saveAndFlush(emptyWorkspace(ownerEmail)));
+        }
+        return workspaceRepository.findFirstByOwnerEmailIgnoreCaseOrderByIdAsc("")
+                .orElseGet(() -> workspaceRepository.saveAndFlush(emptyWorkspace("")));
     }
 
     private WorkspaceState persistAndProject(MobileWorkspaceEntity workspace) {
@@ -479,10 +563,30 @@ public class JpaWorkspaceService implements WorkspaceService {
         return workspace;
     }
 
+    private MobileWorkspaceEntity emptyWorkspace(String ownerEmail) {
+        var workspace = emptyWorkspace();
+        workspace.setOwnerEmail(ownerEmail);
+        workspace.setUserEmail(ownerEmail);
+        return workspace;
+    }
+
+    private String currentOwnerEmail() {
+        var authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication != null && authentication.getPrincipal() instanceof AuthUser authUser) {
+            return defaultText(authUser.email(), "").toLowerCase();
+        }
+        return "";
+    }
+
     private MobileMemberEntity member(MobileWorkspaceEntity workspace, String name, TeamRole role) {
+        return member(workspace, name, "", role);
+    }
+
+    private MobileMemberEntity member(MobileWorkspaceEntity workspace, String name, String email, TeamRole role) {
         var member = new MobileMemberEntity();
         member.setWorkspace(workspace);
         member.setName(name);
+        member.setEmail(defaultText(email, "").toLowerCase());
         member.setRole(role);
         return member;
     }
