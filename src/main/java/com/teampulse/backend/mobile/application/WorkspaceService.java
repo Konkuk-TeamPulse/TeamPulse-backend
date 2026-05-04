@@ -8,5 +8,6 @@ public interface WorkspaceService extends
         MobileMeetingUseCase,
         MobileReportUseCase,
         MobileTeamUseCase,
-        MobileMemberUseCase {
+        MobileMemberUseCase,
+        MobileInvitationUseCase {
 }

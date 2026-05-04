@@ -376,6 +376,18 @@ class WorkspaceControllerTest {
                 .andExpect(jsonPath("$.result[?(@.taskId == %d)].precedingTaskIds[0]".formatted(taskId.longValue()))
                         .value(hasItem(precedingTaskId.intValue())));
 
+        mockMvc.perform(post("/api/tasks/{taskId}/dependencies", precedingTaskId.longValue())
+                        .header("Authorization", accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "precedingTaskId": %d
+                                }
+                                """.formatted(taskId.longValue())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.isSuccess").value(false))
+                .andExpect(jsonPath("$.responseCode").value(3006));
+
         mockMvc.perform(post("/api/tasks/{taskId}/dependencies", taskId.longValue())
                         .header("Authorization", accessToken)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -438,6 +450,18 @@ class WorkspaceControllerTest {
                 .andExpect(jsonPath("$.result.taskId").value(taskId.longValue()))
                 .andExpect(jsonPath("$.result.status").value("DOING"));
 
+        mockMvc.perform(patch("/api/tasks/{taskId}/status", taskId.longValue())
+                        .header("Authorization", accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "status": "IN_PROGRESS"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.isSuccess").value(false))
+                .andExpect(jsonPath("$.responseCode").value(2020));
+
         mockMvc.perform(delete("/api/tasks/{taskId}", taskId.longValue())
                         .header("Authorization", accessToken))
                 .andExpect(status().isOk())
@@ -481,7 +505,10 @@ class WorkspaceControllerTest {
                                   "meetingDate": "2026-04-29",
                                   "agenda": "Review backend progress",
                                   "content": "Discuss remaining in-progress APIs",
-                                  "decisions": "Keep Notion API shape",
+                                  "decisions": [
+                                    "Keep Notion API shape",
+                                    "Accept frontend array payload"
+                                  ],
                                   "attendeeIds": [%d],
                                   "actionItems": [
                                     {
@@ -679,6 +706,14 @@ class WorkspaceControllerTest {
                 .andExpect(jsonPath("$.result.downloadUrl").isString())
                 .andReturn();
         String downloadUrl = JsonPath.read(reportResult.getResponse().getContentAsString(), "$.result.downloadUrl");
+        Number reportId = JsonPath.read(reportResult.getResponse().getContentAsString(), "$.result.reportId");
+
+        mockMvc.perform(get("/api/projects/1/reports")
+                        .header("Authorization", accessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.result[0].id").value(reportId.longValue()))
+                .andExpect(jsonPath("$.result[0].status").value("READY"));
 
         mockMvc.perform(get(downloadUrl)
                         .header("Authorization", accessToken))

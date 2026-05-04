@@ -1,117 +1,238 @@
-# TeamPulse API Changes
+# TeamPulse API 변경사항
 
-이 문서는 Notion/API 명세와 실제 구현이 어긋나지 않도록, API 경로, 요청/응답, 인증 방식, DB 저장 방식이 바뀔 때마다 기록하는 변경 로그입니다.
+이 문서는 Notion API 명세와 실제 백엔드 구현이 어긋나지 않도록 변경된 API, 요청/응답, 인증, DB 저장 방식을 정리하는 기록입니다.
 
-## 2026-05-03
+## 2026-05-04 백엔드 검증 및 DB 연동 보완
 
-### 1. 리포트 PDF 내용 확장
+### 1. 회의 생성 API: `decisions` 배열 요청 허용
 
-- 변경 파일: `src/main/java/com/teampulse/backend/mobile/api/ProjectApiController.java`
-- 영향 API:
+- 변경 파일
+  - `src/main/java/com/teampulse/backend/mobile/dto/MeetingCreateSpecRequest.java`
+  - `src/main/java/com/teampulse/backend/mobile/dto/FlexibleStringListDeserializer.java`
+  - `src/main/java/com/teampulse/backend/mobile/api/ProjectMeetingApiController.java`
+- 영향 API
+  - `POST /api/projects/{projectId}/meetings`
+- 변경 내용
+  - 기존 문자열 형태의 `decisions`도 계속 허용합니다.
+  - 프론트에서 보내는 배열 형태의 `decisions: string[]`도 허용합니다.
+  - 빈 문자열은 저장 대상에서 제외합니다.
+- 프론트 전달사항
+  - 현재 프론트가 `decisions`를 배열로 보내도 백엔드에서 정상 처리됩니다.
+  - 별도 프론트 수정은 필요하지 않습니다.
+
+```json
+{
+  "title": "주간 회의",
+  "meetingDate": "2026-05-08",
+  "agenda": "DB 연동 점검",
+  "content": "회의 내용",
+  "decisions": ["MySQL 프로필 유지", "API 문서 반영"],
+  "attendeeIds": [1],
+  "actionItems": [
+    {
+      "content": "API 변경사항 문서화",
+      "assigneeId": 1,
+      "dueDate": "2026-05-10"
+    }
+  ]
+}
+```
+
+### 2. 초대 링크 조회/수락 로직 보완
+
+- 변경 파일
+  - `src/main/java/com/teampulse/backend/mobile/application/MobileInvitationUseCase.java`
+  - `src/main/java/com/teampulse/backend/mobile/api/InvitationApiController.java`
+  - `src/main/java/com/teampulse/backend/mobile/application/service/JpaWorkspaceService.java`
+  - `src/main/java/com/teampulse/backend/mobile/application/service/InMemoryWorkspaceService.java`
+  - `src/main/java/com/teampulse/backend/mobile/persistence/MobileMemberEntity.java`
+  - `src/main/java/com/teampulse/backend/mobile/persistence/MobileWorkspaceRepository.java`
+- 영향 API
+  - `GET /api/invitations/{inviteCode}`
+  - `POST /api/invitations/{inviteCode}/accept`
+  - `GET /api/projects`
+- 변경 내용
+  - 초대 링크 조회는 현재 로그인 사용자의 워크스페이스가 아니라 `inviteCode` 기준으로 공개 조회합니다.
+  - 초대 수락은 로그인한 사용자의 이메일을 팀 멤버 이메일로 저장합니다.
+  - 초대 수락 후 해당 사용자가 `GET /api/projects`를 호출하면 초대받은 프로젝트가 `MEMBER` 권한으로 조회됩니다.
+- DB 스키마 변경
+  - `assignment2_members.email` 컬럼 추가
+- 프론트 전달사항
+  - `GET /api/invitations/{inviteCode}`는 비로그인 상태에서도 호출할 수 있습니다.
+  - `POST /api/invitations/{inviteCode}/accept`는 로그인 토큰이 필요합니다.
+  - 초대 수락 후 프로젝트 목록을 다시 조회해야 합니다.
+
+### 3. 태스크 의존관계 순환 방지
+
+- 변경 파일
+  - `src/main/java/com/teampulse/backend/mobile/application/service/JpaWorkspaceService.java`
+  - `src/main/java/com/teampulse/backend/mobile/application/service/InMemoryWorkspaceService.java`
+  - `src/main/java/com/teampulse/backend/mobile/api/MobileSpecExceptionHandler.java`
+- 영향 API
+  - `POST /api/tasks/{taskId}/dependencies`
+- 변경 내용
+  - 자기 자신을 선행 태스크로 지정하는 경우를 계속 차단합니다.
+  - 이미 `A -> B` 관계가 있을 때 `B -> A`를 추가하는 순환 의존관계도 차단합니다.
+- 오류 응답
+
+```json
+{
+  "isSuccess": false,
+  "responseCode": 3006,
+  "responseMessage": "순환되는 태스크 의존관계는 설정할 수 없습니다.",
+  "result": null
+}
+```
+
+### 4. 리포트 목록 조회 API 추가
+
+- 변경 파일
+  - `src/main/java/com/teampulse/backend/mobile/api/ProjectApiController.java`
+- 신규 API
+  - `GET /api/projects/{projectId}/reports`
+- 변경 내용
+  - 생성된 리포트 목록을 프로젝트 화면에서 다시 조회할 수 있습니다.
+  - 기존 리포트 생성 및 다운로드 API는 유지됩니다.
+- 관련 API
   - `POST /api/projects/{projectId}/reports`
   - `GET /api/reports/{reportId}/download`
   - `GET /api/projects/{projectId}/reports/{reportId}/download`
-- API 경로 변경: 없음
-- 요청 형식 변경: 없음
-- JSON 응답 형식 변경: 없음
-- 다운로드 파일 형식 변경: 없음. 기존처럼 `application/pdf`
-- 변경 내용:
-  - 기존 PDF 본문은 프로젝트명, 기간, 상태, 업무/회의/리스크 개수만 표시했습니다.
-  - 이제 PDF 본문에 프로젝트 요약, 업무 상태 분포, 담당자, 업무 상세, 회의 요약, 리스크 신호, 최근 활동 로그가 함께 표시됩니다.
-- Notion/API 명세 반영:
-  - endpoint 자체는 수정하지 않아도 됩니다.
-  - 기능 설명에는 "PDF 리포트는 업무, 회의, 리스크, 활동 로그를 요약해 내려받는다" 정도로 보강하면 됩니다.
 
-### 2. MySQL 프로필 인증/세션 저장 전환
+```json
+{
+  "isSuccess": true,
+  "responseCode": 1000,
+  "responseMessage": "요청에 성공했습니다.",
+  "result": [
+    {
+      "id": 8,
+      "label": "TeamPulse report draft",
+      "range": "2026-05-01 ~ 2026-05-03",
+      "status": "READY"
+    }
+  ]
+}
+```
 
-- 변경 파일:
-  - `src/main/java/com/teampulse/backend/auth/infrastructure/InMemoryAuthUserRepository.java`
-  - `src/main/java/com/teampulse/backend/auth/infrastructure/DemoTokenIssuer.java`
-  - `src/main/java/com/teampulse/backend/auth/infrastructure/JpaAuthUserRepository.java`
-  - `src/main/java/com/teampulse/backend/auth/infrastructure/JpaTokenIssuer.java`
-  - `src/main/java/com/teampulse/backend/auth/persistence/*`
-- 영향 API:
+### 5. 잘못된 JSON 본문 오류 처리
+
+- 변경 파일
+  - `src/main/java/com/teampulse/backend/mobile/api/MobileSpecExceptionHandler.java`
+- 영향 API
+  - Spec 응답을 사용하는 프로젝트/태스크/회의/초대/리포트 API
+- 변경 내용
+  - enum 값 오류 등 JSON 본문을 파싱할 수 없는 요청이 500으로 떨어지지 않도록 400 응답으로 처리합니다.
+- 예시
+  - 태스크 상태값은 `TODO`, `DOING`, `DONE`만 허용합니다.
+  - `IN_PROGRESS`를 보내면 아래처럼 실패합니다.
+
+```json
+{
+  "isSuccess": false,
+  "responseCode": 2020,
+  "responseMessage": "요청 본문이 올바르지 않습니다.",
+  "result": null
+}
+```
+
+## 2026-05-03 DB/Auth/MySQL 전환
+
+### 1. MySQL 프로필에서 인증/세션 저장
+
+- 영향 API
   - `POST /api/auth/signup`
   - `POST /api/auth/login`
   - `POST /api/auth/logout`
-- API 경로 변경: 없음
-- 요청 형식 변경: 없음
-- JSON 응답 형식 변경: 없음
-- 변경 내용:
-  - `demo` 프로필은 기존처럼 메모리 인증 저장소를 사용합니다.
-  - `mysql` 프로필은 `users` 테이블에 회원 정보를 저장합니다.
-  - `mysql` 프로필은 `auth_sessions` 테이블에 access token, refresh token, 만료/폐기 상태를 저장합니다.
-  - 서버를 재시작해도 기존 회원으로 다시 로그인할 수 있습니다.
-- Notion/API 명세 반영:
-  - endpoint 문서는 유지해도 됩니다.
-  - 구현 방식 설명에서 "회원/세션 정보는 MySQL에 저장"으로 수정해야 합니다.
+- 변경 내용
+  - `demo` 프로필은 기존처럼 메모리 저장소를 사용합니다.
+  - `mysql` 프로필은 `users`, `auth_sessions` 테이블에 회원과 토큰 세션을 저장합니다.
+  - 서버 재시작 후에도 기존 회원으로 다시 로그인할 수 있습니다.
 
-### 3. 프로젝트 API 인증 필수화
+### 2. MySQL 프로필에서 사용자별 워크스페이스 분리
 
-- 변경 파일:
-  - `src/main/java/com/teampulse/backend/common/config/SecurityConfig.java`
-  - `../TeamPulse-frontend/src/apis/projects.ts`
-  - `../TeamPulse-frontend/src/apis/tasks.ts`
-- 인증 필요 API:
+- 영향 API
+  - `POST /api/projects`
+  - `GET /api/projects`
+  - `GET /api/projects/{projectId}`
+  - `GET/POST/PATCH/DELETE /api/projects/{projectId}/tasks`
+  - `GET/POST/PATCH/DELETE /api/tasks/**`
+  - `GET/POST /api/projects/{projectId}/meetings`
+  - `POST /api/projects/{projectId}/reports`
+- 변경 내용
+  - 로그인한 사용자 이메일 기준으로 워크스페이스를 조회/생성합니다.
+  - 서로 다른 사용자 계정의 프로젝트/태스크 데이터가 같은 워크스페이스에 섞이지 않습니다.
+- DB 스키마 변경
+  - `assignment2_workspaces.owner_email` 컬럼 추가
+
+### 3. 프로젝트/태스크/회의/리포트 API 인증 필수화
+
+- 인증 필요 API
   - `GET /api/users/me`
   - `GET/PATCH /api/account`
-  - `GET/POST/PATCH /api/projects/**`
+  - `GET/POST/PATCH/DELETE /api/projects/**`
   - `GET/POST/PATCH/DELETE /api/tasks/**`
   - `GET/POST /api/meetings/**`
   - `GET /api/reports/**`
   - `POST /api/invitations/{inviteCode}/accept`
-- 공개 유지 API:
+- 공개 API
   - `GET /api/health`
   - `GET /api/roadmap`
   - `POST /api/auth/signup`
   - `POST /api/auth/login`
   - `GET /api/invitations/{inviteCode}`
   - `GET/POST/PATCH/DELETE /api/mobile/**` legacy demo API
-- API 경로 변경: 없음
-- 요청 형식 변경: 없음
-- JSON 응답 형식 변경: 없음
-- 인증 헤더 변경:
-  - 프로젝트/업무/회의/리포트 관련 API는 `Authorization: Bearer ...` 헤더가 필요합니다.
-- 프론트 수정 이유:
-  - 기존 프론트의 일부 프로젝트/태스크 조회 호출은 `auth=false`로 설정되어 토큰을 보내지 않았습니다.
-  - 백엔드가 인증 필수 구조로 바뀌면 해당 호출이 `401 Unauthorized`로 깨질 수 있습니다.
-  - 그래서 UI는 건드리지 않고 API 클라이언트 호출 옵션만 로그인 토큰을 보내도록 정리했습니다.
-- Notion/API 명세 반영:
-  - 각 프로젝트/업무/회의/리포트 API에 "로그인 필요" 또는 "Authorization 헤더 필요" 표시가 필요합니다.
+- 프론트 전달사항
+  - 보호 API 호출에는 `Authorization: Bearer ...` 헤더가 필요합니다.
 
-### 4. MySQL 프로필 워크스페이스 사용자 분리
+## 현재 DB 테이블
 
-- 변경 파일:
-  - `src/main/java/com/teampulse/backend/mobile/persistence/MobileWorkspaceEntity.java`
-  - `src/main/java/com/teampulse/backend/mobile/persistence/MobileWorkspaceRepository.java`
-  - `src/main/java/com/teampulse/backend/mobile/application/service/JpaWorkspaceService.java`
-- 영향 API:
-  - `POST /api/projects`
-  - `GET /api/projects`
-  - `GET /api/projects/{projectId}`
-  - `GET/POST /api/projects/{projectId}/tasks`
-  - `GET/POST /api/projects/{projectId}/meetings`
-  - `POST /api/projects/{projectId}/reports`
-- API 경로 변경: 없음
-- 요청 형식 변경: 없음
-- JSON 응답 형식 변경: 없음
-- DB 스키마 변경:
-  - `assignment2_workspaces.owner_email` 컬럼 추가
-- 변경 내용:
-  - MySQL 프로필에서는 로그인한 사용자의 이메일 기준으로 워크스페이스를 조회/생성합니다.
-  - 서로 다른 사용자 계정의 프로젝트/업무 데이터가 같은 전역 워크스페이스에 섞이지 않도록 분리했습니다.
-  - 비로그인 legacy `/api/mobile/**` 요청은 `owner_email`이 비어 있는 별도 워크스페이스만 사용합니다.
-- 남은 제약:
-  - 외부 API의 `projectId`는 아직 MVP 호환을 위해 `1` 고정 응답을 유지합니다.
-  - 실제 다중 프로젝트 ID 체계로 바꾸면 endpoint 응답 의미가 바뀌므로 별도 API 문서 업데이트가 필요합니다.
+MySQL 프로필 기준 주요 테이블은 아래와 같습니다.
 
-### 5. 로컬 MySQL 검증 기록
+- `users`: 회원 정보
+- `auth_sessions`: access token, refresh token 세션
+- `assignment2_workspaces`: 프로젝트/워크스페이스
+- `assignment2_members`: 팀 멤버, 이메일, 역할
+- `assignment2_tasks`: 태스크
+- `assignment2_meetings`: 회의록
+- `assignment2_reports`: 리포트 메타데이터
+- `assignment2_activities`: 활동 로그
 
-- 설치: `winget install --id Oracle.MySQL -e --silent --accept-package-agreements --accept-source-agreements`
-- 로컬 데이터 디렉터리: `C:\tmp\teampulse-mysql-data`
-- 실행 포트: `127.0.0.1:3306`
-- 검증 완료:
-  - MySQL 8.4.8 접속 성공
-  - `teampulse` DB/계정 생성
-  - `SPRING_PROFILES_ACTIVE=mysql` 백엔드 실행 성공
-  - 회원가입 -> 프로젝트 생성 -> 태스크 생성 -> 서버 재시작 -> 로그인 -> 프로젝트/태스크 재조회 성공
+## Notion/API 문서에 반영할 내용
+
+1. 회의 생성 API의 `decisions` 타입을 `string | string[]` 또는 `string[] 권장`으로 정리합니다.
+2. 리포트 목록 조회 API `GET /api/projects/{projectId}/reports`를 추가합니다.
+3. 태스크 상태 enum은 `TODO`, `DOING`, `DONE`으로 고정합니다.
+4. 초대 링크는 `GET` 공개 조회, `POST accept` 로그인 필요로 구분합니다.
+5. MySQL 저장 테이블에 `assignment2_members.email`과 `assignment2_workspaces.owner_email`이 추가된 점을 DB 설계 문서에 반영합니다.
+6. 태스크 의존관계 순환 오류 코드 `3006`을 오류 코드 표에 추가하거나 기존 태스크 의존성 오류에 포함합니다.
+
+## 2026-05-04 실제 검증 결과
+
+- 실행 프로필: `mysql`
+- DB: MySQL 8.4.8, `teampulse` database
+- 검증 흐름
+  - 회원가입 2명
+  - 프로젝트 생성
+  - 태스크 2개 생성
+  - 태스크 상태 변경
+  - 잘못된 상태값 400 처리 확인
+  - 태스크 의존관계 생성
+  - 순환 의존관계 400 처리 확인
+  - 회의 생성
+  - 초대 링크 생성/공개 조회/수락
+  - 초대받은 사용자의 프로젝트 목록 조회
+  - 리포트 생성/목록 조회/PDF 다운로드
+- 최종 확인 데이터
+  - 프로젝트: `Smoke Project 20260504020506`
+  - 초대 코드: `JJ3JP7`
+  - 초대받은 사용자 역할: `MEMBER`
+  - 순환 의존관계 오류 코드: `3006`
+  - 잘못된 상태값 오류 코드: `2020`
+  - 리포트 ID: `8`
+  - PDF 다운로드 크기: `2533 bytes`
+
+## 남은 MVP 제약
+
+- 프로젝트 ID는 아직 MVP 호환을 위해 `1` 중심으로 동작합니다.
+- 한 사용자가 여러 프로젝트에 속하는 완전한 멀티 프로젝트 구조는 아직 아닙니다.
+- 리포트 PDF는 백엔드에서 생성한 단일 페이지 요약 PDF입니다. 실제 서비스 수준에서는 PDF 템플릿/한글 폰트/다중 페이지 처리가 추가로 필요합니다.

@@ -147,12 +147,12 @@ public class ProjectApiController {
     }
 
     @GetMapping("/projects")
-    public SpecResponse<List<ProjectSummaryView>> listProjects() {
+    public SpecResponse<List<ProjectSummaryView>> listProjects(Authentication authentication) {
         var workspace = workspaceQueryUseCase.getWorkspace();
         if (!workspace.initialized()) {
             return SpecResponse.ok(SUCCESS_MESSAGE, List.of());
         }
-        return SpecResponse.ok(SUCCESS_MESSAGE, List.of(projectSummary(workspace)));
+        return SpecResponse.ok(SUCCESS_MESSAGE, List.of(projectSummary(workspace, authentication)));
     }
 
     @GetMapping("/projects/{projectId}")
@@ -294,6 +294,12 @@ public class ProjectApiController {
         return SpecResponse.ok(REPORT_CREATED_MESSAGE, new ReportCreateResponse(report.id(), "/api/reports/" + report.id() + "/download"));
     }
 
+    @GetMapping("/projects/{projectId}/reports")
+    public SpecResponse<List<ReportView>> listReports(@PathVariable long projectId) {
+        requireDemoProject(projectId);
+        return SpecResponse.ok(SUCCESS_MESSAGE, workspaceQueryUseCase.getWorkspace().reports());
+    }
+
     @GetMapping("/projects/{projectId}/reports/{reportId}/download")
     public void downloadReport(
             @PathVariable long projectId,
@@ -327,14 +333,28 @@ public class ProjectApiController {
         response.getOutputStream().write(body);
     }
 
-    private ProjectSummaryView projectSummary(WorkspaceState workspace) {
+    private ProjectSummaryView projectSummary(WorkspaceState workspace, Authentication authentication) {
         return new ProjectSummaryView(
                 DEMO_PROJECT_ID,
                 workspace.team().name(),
                 workspace.team().courseName(),
-                TeamRole.LEADER.name(),
+                projectRole(workspace, authentication).name(),
                 workspace.team().dueDate()
         );
+    }
+
+    private TeamRole projectRole(WorkspaceState workspace, Authentication authentication) {
+        if (authentication != null && authentication.getPrincipal() instanceof AuthUser authUser) {
+            if (workspace.user().email().equalsIgnoreCase(authUser.email())) {
+                return TeamRole.LEADER;
+            }
+            return workspace.members().stream()
+                    .filter(member -> member.name().equalsIgnoreCase(authUser.name()))
+                    .map(MemberView::role)
+                    .findFirst()
+                    .orElse(TeamRole.MEMBER);
+        }
+        return TeamRole.LEADER;
     }
 
     private UserMeResponse userMe(WorkspaceState workspace, Authentication authentication) {
