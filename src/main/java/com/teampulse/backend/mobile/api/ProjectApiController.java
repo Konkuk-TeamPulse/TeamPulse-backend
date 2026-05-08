@@ -36,10 +36,17 @@ import com.teampulse.backend.mobile.dto.UpdateTeamRequest;
 import com.teampulse.backend.mobile.dto.UserMeResponse;
 import com.teampulse.backend.mobile.dto.UserProfile;
 import com.teampulse.backend.mobile.dto.WorkspaceState;
+import com.lowagie.text.Document;
+import com.lowagie.text.DocumentException;
+import com.lowagie.text.Font;
+import com.lowagie.text.PageSize;
+import com.lowagie.text.Paragraph;
+import com.lowagie.text.pdf.BaseFont;
+import com.lowagie.text.pdf.PdfWriter;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeParseException;
@@ -64,6 +71,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api")
 public class ProjectApiController {
 
+    private static final String REPORT_FONT_RESOURCE = "/fonts/malgun.ttf";
     private static final String DEFAULT_OWNER_NAME = "Demo Leader";
     private static final String DEFAULT_OWNER_EMAIL = "leader@teampulse.app";
     private static final String DEFAULT_SEMESTER = "2026-1";
@@ -540,7 +548,7 @@ public class ProjectApiController {
                 .orElseThrow(() -> new IllegalArgumentException("Report not found."));
     }
 
-    private byte[] reportPdf(WorkspaceState workspace, ReportView report) {
+    private byte[] reportPdf(WorkspaceState workspace, ReportView report) throws IOException {
         var lines = new java.util.ArrayList<String>();
         addReportLine(lines, "TeamPulse Report");
         addReportLine(lines, "Generated at: " + LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS));
@@ -627,18 +635,44 @@ public class ProjectApiController {
                 "- " + activity.at() + " / " + activity.actor() + ": " + activity.summary()));
     }
 
-        var stream = new StringBuilder("BT\n/F1 16 Tf\n50 790 Td\n");
-        for (int index = 0; index < lines.size(); index++) {
-            if (index == 1) {
-                stream.append("/F1 9 Tf\n");
+        try {
+            var output = new ByteArrayOutputStream();
+            var document = new Document(PageSize.A4, 50, 50, 50, 50);
+            PdfWriter.getInstance(document, output);
+            document.open();
+
+            var baseFont = koreanBaseFont();
+            var titleFont = new Font(baseFont, 16, Font.BOLD);
+            var bodyFont = new Font(baseFont, 10, Font.NORMAL);
+
+            for (int index = 0; index < lines.size(); index++) {
+                addPdfParagraph(document, lines.get(index), index == 0 ? titleFont : bodyFont);
             }
-            if (index > 0) {
-                stream.append("0 -15 Td\n");
-            }
-            stream.append("(").append(pdfText(lines.get(index))).append(") Tj\n");
+
+            document.close();
+            return output.toByteArray();
+        } catch (DocumentException exception) {
+            throw new IOException("Failed to create report PDF.", exception);
         }
-        stream.append("ET");
-        return minimalPdf(stream.toString());
+    }
+
+    private BaseFont koreanBaseFont() throws IOException, DocumentException {
+        try (var fontStream = ProjectApiController.class.getResourceAsStream(REPORT_FONT_RESOURCE)) {
+            if (fontStream == null) {
+                throw new IOException("Report font resource not found: " + REPORT_FONT_RESOURCE);
+            }
+            return BaseFont.createFont(
+                    "malgun.ttf",
+                    BaseFont.IDENTITY_H,
+                    BaseFont.EMBEDDED,
+                    true,
+                    fontStream.readAllBytes(),
+                    null);
+        }
+    }
+
+    private void addPdfParagraph(Document document, String text, Font font) throws DocumentException {
+        document.add(new Paragraph(text == null ? "" : text, font));
     }
 
     private void addReportSection(List<String> lines, String title) {
@@ -683,51 +717,6 @@ public class ProjectApiController {
 
     private String textOrDash(String value) {
         return value == null || value.isBlank() ? "-" : value.trim();
-    }
-
-    private byte[] minimalPdf(String contentStream) {
-        var objects = List.of(
-                "<< /Type /Catalog /Pages 2 0 R >>",
-                "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-                "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
-                "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-                "<< /Length " + contentStream.length() + " >>\nstream\n" + contentStream + "\nendstream");
-        var body = new StringBuilder("%PDF-1.4\n");
-        var offsets = new java.util.ArrayList<Integer>();
-        for (int index = 0; index < objects.size(); index++) {
-            offsets.add(body.length());
-            body.append(index + 1).append(" 0 obj\n")
-                    .append(objects.get(index)).append("\n")
-                    .append("endobj\n");
-        }
-        var xrefOffset = body.length();
-        body.append("xref\n0 ").append(objects.size() + 1).append("\n")
-                .append("0000000000 65535 f \n");
-        for (var offset : offsets) {
-            body.append("%010d 00000 n \n".formatted(offset));
-        }
-        body.append("trailer\n<< /Size ").append(objects.size() + 1).append(" /Root 1 0 R >>\n")
-                .append("startxref\n")
-                .append(xrefOffset)
-                .append("\n%%EOF\n");
-        return body.toString().getBytes(StandardCharsets.US_ASCII);
-    }
-
-    private String pdfText(String value) {
-        if (value == null || value.isBlank()) {
-            return "";
-        }
-        var builder = new StringBuilder();
-        for (var character : value.toCharArray()) {
-            if (character == '(' || character == ')' || character == '\\') {
-                builder.append('\\').append(character);
-            } else if (character >= 32 && character <= 126) {
-                builder.append(character);
-            } else {
-                builder.append('?');
-            }
-        }
-        return builder.toString();
     }
 
     private List<RiskActionOption> riskActions(RiskView risk, WorkspaceState workspace) {

@@ -1,5 +1,6 @@
 package com.teampulse.backend.mobile.api;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.startsWith;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -12,6 +13,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jayway.jsonpath.JsonPath;
+import com.lowagie.text.pdf.PdfReader;
+import com.lowagie.text.pdf.parser.PdfTextExtractor;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -653,9 +656,9 @@ class WorkspaceControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "projectName": "Report Project",
-                                  "subject": "Advanced Project",
-                                  "description": "Report API test project",
+                                  "projectName": "한글 리포트 프로젝트",
+                                  "subject": "고급 프로젝트",
+                                  "description": "리포트 API 한글 테스트",
                                   "startDate": "2026-04-01",
                                   "endDate": "2026-06-09"
                                 }
@@ -680,11 +683,11 @@ class WorkspaceControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "title": "Report Source Meeting",
+                                  "title": "주간 회의",
                                   "meetingDate": "2026-04-29",
-                                  "agenda": "Collect report data",
-                                  "content": "Gather weekly activity",
-                                  "decisions": "Create report",
+                                  "agenda": "리포트 데이터 수집",
+                                  "content": "주간 활동을 정리합니다",
+                                  "decisions": "리포트 생성",
                                   "attendeeIds": [],
                                   "actionItems": []
                                 }
@@ -715,12 +718,28 @@ class WorkspaceControllerTest {
                 .andExpect(jsonPath("$.result[0].id").value(reportId.longValue()))
                 .andExpect(jsonPath("$.result[0].status").value("READY"));
 
-        mockMvc.perform(get(downloadUrl)
+        MvcResult downloadResult = mockMvc.perform(get(downloadUrl)
                         .header("Authorization", accessToken))
                 .andExpect(status().isOk())
                 .andExpect(header().string("Content-Disposition", "attachment; filename=\"teampulse-report.pdf\""))
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PDF))
-                .andExpect(content().string(startsWith("%PDF-1.4")));
+                .andExpect(content().string(startsWith("%PDF-")))
+                .andReturn();
+
+        byte[] pdf = downloadResult.getResponse().getContentAsByteArray();
+        PdfReader reader = new PdfReader(pdf);
+        var extractor = new PdfTextExtractor(reader);
+        var extractedText = new StringBuilder();
+        for (int page = 1; page <= reader.getNumberOfPages(); page++) {
+            extractedText.append(extractor.getTextFromPage(page));
+        }
+        reader.close();
+
+        assertThat(extractedText.toString())
+                .contains("한글 리포트 프로젝트")
+                .contains("고급 프로젝트")
+                .contains("주간 회의")
+                .doesNotContain("???");
     }
 
     private String issueAccessToken(String email) throws Exception {
