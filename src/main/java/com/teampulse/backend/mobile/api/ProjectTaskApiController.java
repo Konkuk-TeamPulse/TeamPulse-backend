@@ -79,6 +79,8 @@ public class ProjectTaskApiController {
                 task.dueDate()));
     }
 
+    // Deprecated: 프론트엔드는 프로젝트 ID 없는 태스크 수정 API PATCH /api/tasks/{taskId} 를 사용합니다.
+    @Deprecated
     @PatchMapping("/{taskId}")
     public ApiResponse<WorkspaceState> updateTask(
             @PathVariable long projectId,
@@ -88,11 +90,15 @@ public class ProjectTaskApiController {
         return ApiResponse.ok(projectWorkspaceUseCase.updateProjectTask(projectId, taskId, request));
     }
 
+    // Deprecated: 프론트엔드는 프로젝트 ID 없는 태스크 삭제 API DELETE /api/tasks/{taskId} 를 사용합니다.
+    @Deprecated
     @DeleteMapping("/{taskId}")
     public ApiResponse<WorkspaceState> deleteTask(@PathVariable long projectId, @PathVariable long taskId) {
         return ApiResponse.ok(projectWorkspaceUseCase.deleteProjectTask(projectId, taskId));
     }
 
+    // Deprecated: 프론트엔드는 프로젝트 ID 없는 상태 변경 API PATCH /api/tasks/{taskId}/status 를 사용합니다.
+    @Deprecated
     @PatchMapping("/{taskId}/status")
     public ApiResponse<WorkspaceState> updateTaskStatus(
             @PathVariable long projectId,
@@ -102,6 +108,8 @@ public class ProjectTaskApiController {
         return ApiResponse.ok(projectWorkspaceUseCase.updateProjectTaskStatus(projectId, taskId, request));
     }
 
+    // Deprecated: 프론트엔드는 프로젝트 ID 없는 의존성 추가 API POST /api/tasks/{taskId}/dependencies 를 사용합니다.
+    @Deprecated
     @PostMapping("/{taskId}/dependencies")
     public ApiResponse<WorkspaceState> addDependency(
             @PathVariable long projectId,
@@ -111,6 +119,8 @@ public class ProjectTaskApiController {
         return ApiResponse.ok(projectWorkspaceUseCase.addProjectTaskDependency(projectId, taskId, request));
     }
 
+    // Deprecated: 프론트엔드는 프로젝트 ID 없는 의존성 삭제 API DELETE /api/tasks/{taskId}/dependencies/{dependencyId} 를 사용합니다.
+    @Deprecated
     @DeleteMapping("/{taskId}/dependencies/{dependencyTitle}")
     public ApiResponse<WorkspaceState> deleteDependency(
             @PathVariable long projectId,

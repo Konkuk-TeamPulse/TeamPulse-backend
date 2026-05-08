@@ -18,6 +18,8 @@ public class MobileReportController {
         this.mobileReportUseCase = mobileReportUseCase;
     }
 
+    // Deprecated: 프론트엔드는 프로젝트 리포트 생성 API POST /api/projects/{projectId}/reports 를 사용합니다.
+    @Deprecated
     @PostMapping
     public ApiResponse<WorkspaceState> generateReport() {
         return ApiResponse.ok(mobileReportUseCase.generateReport());

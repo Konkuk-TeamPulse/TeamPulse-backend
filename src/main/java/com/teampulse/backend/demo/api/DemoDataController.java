@@ -11,6 +11,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/demo")
 public class DemoDataController {
 
+    // Deprecated: 프론트엔드는 데모 셸 데이터 대신 프로젝트 기반 API GET /api/projects 와 GET /api/projects/{projectId} 를 사용합니다.
+    @Deprecated
     @GetMapping("/shell-data")
     public ApiResponse<Map<String, Object>> shellData() {
         List<Map<String, Object>> milestones = List.of(

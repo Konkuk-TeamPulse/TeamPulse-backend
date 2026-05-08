@@ -39,6 +39,8 @@ public class HealthController {
         ));
     }
 
+    // Deprecated: 프론트엔드는 상태 확인에 GET /api/health 만 사용합니다.
+    @Deprecated
     @GetMapping("/roadmap")
     public ApiResponse<Map<String, Object>> roadmap() {
         return ApiResponse.ok(Map.of(

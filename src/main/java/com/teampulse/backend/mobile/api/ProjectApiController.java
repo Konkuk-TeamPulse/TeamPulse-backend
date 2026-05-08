@@ -85,11 +85,15 @@ public class ProjectApiController {
         this.mobileAccountUseCase = mobileAccountUseCase;
     }
 
+    // Deprecated: 프론트엔드는 현재 사용자 조회 API GET /api/users/me 를 사용합니다.
+    @Deprecated
     @GetMapping("/account")
     public ApiResponse<UserProfile> getAccount() {
         return ApiResponse.ok(workspaceQueryUseCase.getWorkspace().user());
     }
 
+    // Deprecated: 프론트엔드는 현재 계정 수정 API를 호출하지 않고 GET /api/users/me 로 사용자 정보를 조회합니다.
+    @Deprecated
     @PatchMapping("/account")
     public ApiResponse<UserProfile> updateAccount(@Valid @RequestBody UpdateAccountRequest request) {
         return ApiResponse.ok(mobileAccountUseCase.updateAccount(request).user());
@@ -101,6 +105,8 @@ public class ProjectApiController {
         return SpecResponse.ok(SUCCESS_MESSAGE, userMe(workspace, authentication));
     }
 
+    // Deprecated: 프론트엔드는 프로젝트 활동 로그 API GET /api/projects/{projectId}/activity-logs 를 사용합니다.
+    @Deprecated
     @GetMapping("/account/activities")
     public ApiResponse<List<ActivityView>> listAccountActivities() {
         var workspace = workspaceQueryUseCase.getWorkspace();
@@ -174,6 +180,8 @@ public class ProjectApiController {
                 .toList());
     }
 
+    // Deprecated: 프론트엔드는 멤버 직접 추가 API를 호출하지 않고 초대 API POST /api/projects/{projectId}/invitations 를 사용합니다.
+    @Deprecated
     @PostMapping("/projects/{projectId}/members")
     public ApiResponse<WorkspaceState> addMember(
             @PathVariable long projectId,
@@ -201,11 +209,15 @@ public class ProjectApiController {
         return SpecResponse.ok("\uD300\uC5D0\uC11C \uD0C8\uD1F4\uD588\uC2B5\uB2C8\uB2E4.", null);
     }
 
+    // Deprecated: 프론트엔드는 현재 사용자 탈퇴 API DELETE /api/projects/{projectId}/members/me 를 사용합니다.
+    @Deprecated
     @DeleteMapping("/projects/{projectId}/members/{memberId}")
     public ApiResponse<WorkspaceState> deleteMember(@PathVariable long projectId, @PathVariable long memberId) {
         return ApiResponse.ok(projectWorkspaceUseCase.deleteProjectMember(projectId, memberId));
     }
 
+    // Deprecated: 프론트엔드는 초대 생성 API POST /api/projects/{projectId}/invitations 를 사용합니다.
+    @Deprecated
     @PostMapping("/projects/{projectId}/invite-links")
     public ApiResponse<Map<String, Object>> createInviteLink(
             @PathVariable long projectId,
@@ -224,6 +236,8 @@ public class ProjectApiController {
         return SpecResponse.ok(SUCCESS_MESSAGE, invitationResponse(projectId, workspace.team()));
     }
 
+    // Deprecated: 프론트엔드는 활동 로그 API GET /api/projects/{projectId}/activity-logs 를 사용합니다.
+    @Deprecated
     @GetMapping("/projects/{projectId}/activities")
     public ApiResponse<List<ActivityView>> listActivities(@PathVariable long projectId) {
         return ApiResponse.ok(projectWorkspaceUseCase.getProjectWorkspace(projectId).activities());
@@ -241,6 +255,8 @@ public class ProjectApiController {
         return ApiResponse.ok(projectWorkspaceUseCase.getProjectWorkspace(projectId).risks());
     }
 
+    // Deprecated: 프론트엔드는 리스크 목록 API GET /api/projects/{projectId}/risks 와 대시보드 API GET /api/projects/{projectId}/dashboard 를 사용합니다.
+    @Deprecated
     @GetMapping("/projects/{projectId}/risks/{riskId}/actions")
     public ApiResponse<List<RiskActionOption>> listRiskActions(@PathVariable long projectId, @PathVariable long riskId) {
         var workspace = projectWorkspaceUseCase.getProjectWorkspace(projectId);
@@ -266,11 +282,15 @@ public class ProjectApiController {
         return SpecResponse.ok(REPORT_CREATED_MESSAGE, new ReportCreateResponse(report.id(), "/api/reports/" + report.id() + "/download"));
     }
 
+    // Deprecated: 프론트엔드는 리포트 생성 API POST /api/projects/{projectId}/reports 와 다운로드 API GET /api/reports/{reportId}/download 를 사용합니다.
+    @Deprecated
     @GetMapping("/projects/{projectId}/reports")
     public SpecResponse<List<ReportView>> listReports(@PathVariable long projectId) {
         return SpecResponse.ok(SUCCESS_MESSAGE, projectWorkspaceUseCase.getProjectWorkspace(projectId).reports());
     }
 
+    // Deprecated: 프론트엔드는 프로젝트 ID 없는 다운로드 API GET /api/reports/{reportId}/download 를 사용합니다.
+    @Deprecated
     @GetMapping("/projects/{projectId}/reports/{reportId}/download")
     public void downloadReport(
             @PathVariable long projectId,

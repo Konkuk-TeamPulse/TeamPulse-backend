@@ -54,6 +54,8 @@ public class ProjectMeetingApiController {
                 meeting.time()));
     }
 
+    // Deprecated: 프론트엔드는 회의 상세 조회 API GET /api/meetings/{meetingId} 를 사용합니다.
+    @Deprecated
     @GetMapping("/{meetingId}")
     public SpecResponse<MeetingSpecResponse> getMeeting(@PathVariable long projectId, @PathVariable long meetingId) {
         var workspace = projectWorkspaceUseCase.getProjectWorkspace(projectId);
