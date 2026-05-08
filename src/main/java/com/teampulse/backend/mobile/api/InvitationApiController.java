@@ -54,8 +54,7 @@ public class InvitationApiController {
     ) {
         var authUser = requireAuthUser(authentication);
         var memberName = defaultText(request == null ? null : request.name(), authUser.name());
-        var role = request == null || request.role() == null ? TeamRole.MEMBER : request.role();
-        var updatedWorkspace = mobileInvitationUseCase.acceptInvitation(token, memberName, authUser.email(), role);
+        var updatedWorkspace = mobileInvitationUseCase.acceptInvitation(token, memberName, authUser.email(), TeamRole.MEMBER);
         var member = updatedWorkspace.members().stream()
                 .filter(candidate -> candidate.email().equalsIgnoreCase(authUser.email()))
                 .findFirst()

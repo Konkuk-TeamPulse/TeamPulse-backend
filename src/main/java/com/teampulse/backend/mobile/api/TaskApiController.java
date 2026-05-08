@@ -97,8 +97,11 @@ public class TaskApiController {
     @DeleteMapping("/{taskId}/dependencies/{dependencyId}")
     public SpecResponse<Void> deleteDependency(@PathVariable long taskId, @PathVariable long dependencyId) {
         var workspace = projectWorkspaceUseCase.getProjectWorkspaceByTaskId(taskId);
-        requireTaskById(workspace, taskId);
+        var task = requireTaskById(workspace, taskId);
         var precedingTask = requireTaskById(workspace, dependencyId);
+        if (!hasBlocker(task, precedingTask)) {
+            throw new IllegalArgumentException("Task dependency not found.");
+        }
         projectWorkspaceUseCase.deleteTaskDependencyById(taskId, precedingTask.title());
         return SpecResponse.ok(TASK_DEPENDENCY_DELETED_MESSAGE, null);
     }
@@ -115,5 +118,10 @@ public class TaskApiController {
                 .filter(task -> task.id() == taskId)
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("Task not found."));
+    }
+
+    private boolean hasBlocker(TaskView task, TaskView precedingTask) {
+        return task.blockers().stream()
+                .anyMatch(blocker -> blocker.equalsIgnoreCase(precedingTask.title()));
     }
 }
