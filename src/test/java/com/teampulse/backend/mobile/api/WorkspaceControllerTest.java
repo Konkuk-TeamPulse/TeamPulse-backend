@@ -408,6 +408,12 @@ class WorkspaceControllerTest {
                 .andExpect(jsonPath("$.responseCode").value(1000))
                 .andExpect(jsonPath("$.result").doesNotExist());
 
+        mockMvc.perform(delete("/api/tasks/{taskId}/dependencies/{dependencyId}", taskId.longValue(), precedingTaskId.longValue())
+                        .header("Authorization", accessToken))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.isSuccess").value(false))
+                .andExpect(jsonPath("$.responseCode").value(2020));
+
         mockMvc.perform(get("/api/projects/1/tasks")
                         .header("Authorization", accessToken))
                 .andExpect(status().isOk())
@@ -632,7 +638,11 @@ class WorkspaceControllerTest {
         mockMvc.perform(post("/api/invitations/{inviteCode}/accept", inviteCode)
                         .header("Authorization", accessToken)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{}"))
+                        .content("""
+                                {
+                                  "role": "LEADER"
+                                }
+                                """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.isSuccess").value(true))
                 .andExpect(jsonPath("$.responseCode").value(1000))
