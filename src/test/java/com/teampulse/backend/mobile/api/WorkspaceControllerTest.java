@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.startsWith;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -31,6 +32,16 @@ class WorkspaceControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Test
+    void deployedFrontendOriginIsAllowedForCorsPreflight() throws Exception {
+        mockMvc.perform(options("/api/health")
+                        .header("Origin", "https://team-pulse-frontend.vercel.app")
+                        .header("Access-Control-Request-Method", "GET"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Access-Control-Allow-Origin", "https://team-pulse-frontend.vercel.app"))
+                .andExpect(header().string("Access-Control-Allow-Credentials", "true"));
+    }
 
     @Test
     void mobileWorkspaceEndpointIsAccessibleWithoutAuthentication() throws Exception {
