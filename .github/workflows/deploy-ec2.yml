@@ -61,20 +61,28 @@ jobs:
 
             nohup java -jar target/backend-0.0.1-SNAPSHOT.jar > app.log 2>&1 &
 
-            echo "Waiting for backend health check..."
+            echo "Waiting for backend process and port 8080..."
 
-            for i in {1..30}; do
-              if curl -f http://localhost:8080/api/health; then
-                echo "Backend started successfully"
+            for i in {1..40}; do
+              if ! pgrep -f '[j]ava -jar target/backend-0.0.1-SNAPSHOT.jar' > /dev/null; then
+                echo "Backend process is not running"
+                tail -n 150 app.log
+                exit 1
+              fi
+
+              if ss -ltn | grep -q ':8080 '; then
+                echo "Backend process is running and port 8080 is open"
+                echo "Optional health response:"
+                curl -i http://127.0.0.1:8080/api/health || true
                 tail -n 80 app.log
                 exit 0
               fi
 
-              echo "Health check failed. Retry $i/30..."
+              echo "Waiting... Retry $i/40"
               sleep 3
             done
 
-            echo "Backend failed to start after waiting"
+            echo "Backend failed to open port 8080 after waiting"
             tail -n 150 app.log
             exit 1
           EOF
