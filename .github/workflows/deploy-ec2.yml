@@ -22,10 +22,11 @@ jobs:
           chmod 600 ~/.ssh/teampulse-key.pem
 
           if ! ssh-keyscan -T 10 -H "$EC2_HOST" >> ~/.ssh/known_hosts; then
-            echo "::error::Failed to reach EC2 SSH host. Check EC2_HOST, instance public IP, security group inbound TCP 22, and network ACLs."
+            echo "::error::Failed to reach EC2 SSH host."
             exit 1
           fi
 
+          set +e
           ssh -o ConnectTimeout=10 -o ServerAliveInterval=15 -i ~/.ssh/teampulse-key.pem "$EC2_USER@$EC2_HOST" << 'EOF'
             set -e
 
@@ -71,4 +72,27 @@ jobs:
 
             echo "Deploy command completed"
             exit 0
+          EOF
+
+          DEPLOY_STATUS=$?
+          set -e
+
+          if [ "$DEPLOY_STATUS" -ne 0 ]; then
+            echo "::warning::Deploy SSH command returned non-zero status: $DEPLOY_STATUS"
+            echo "Checking whether backend is actually running..."
+          fi
+
+          ssh -o ConnectTimeout=10 -i ~/.ssh/teampulse-key.pem "$EC2_USER@$EC2_HOST" << 'EOF'
+            set -e
+
+            cd ~/TeamPulse-backend
+
+            if curl -f http://127.0.0.1:8080/api/health; then
+              echo "Backend health check succeeded after deploy"
+              exit 0
+            else
+              echo "Backend health check failed after deploy"
+              tail -n 150 app.log
+              exit 1
+            fi
           EOF
