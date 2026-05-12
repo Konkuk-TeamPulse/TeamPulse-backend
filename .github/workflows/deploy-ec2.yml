@@ -37,7 +37,17 @@ jobs:
             chmod +x ./mvnw
             ./mvnw clean package -DskipTests
 
+            if [ ! -f ~/.teampulse.env ]; then
+              echo "Missing ~/.teampulse.env"
+              exit 1
+            fi
+
+            set -a
             source ~/.teampulse.env
+            set +a
+
+            echo "SPRING_PROFILES_ACTIVE=$SPRING_PROFILES_ACTIVE"
+            echo "APP_CORS_ALLOWED_ORIGINS=$APP_CORS_ALLOWED_ORIGINS"
 
             OLD_PID=$(pgrep -f '[j]ava -jar target/backend-0.0.1-SNAPSHOT.jar' || true)
 
@@ -51,9 +61,9 @@ jobs:
 
             nohup java -jar target/backend-0.0.1-SNAPSHOT.jar > app.log 2>&1 &
 
-            sleep 8
+            sleep 10
 
-            if pgrep -f '[j]ava -jar target/backend-0.0.1-SNAPSHOT.jar' > /dev/null; then
+            if curl -f http://localhost:8080/api/health; then
               echo "Backend started successfully"
               tail -n 50 app.log
             else
