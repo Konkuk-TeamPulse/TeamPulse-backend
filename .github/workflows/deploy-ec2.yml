@@ -28,12 +28,28 @@ jobs:
             chmod +x ./mvnw
             ./mvnw clean package -DskipTests
 
-            pkill -f 'backend-0.0.1-SNAPSHOT.jar' || true
-
             source ~/.teampulse.env
+
+            OLD_PID=$(pgrep -f '[j]ava -jar target/backend-0.0.1-SNAPSHOT.jar' || true)
+
+            if [ -n "$OLD_PID" ]; then
+              echo "Stopping old backend process: $OLD_PID"
+              kill $OLD_PID
+              sleep 2
+            else
+              echo "No old backend process found"
+            fi
 
             nohup java -jar target/backend-0.0.1-SNAPSHOT.jar > app.log 2>&1 &
 
-            sleep 5
-            tail -n 50 app.log
+            sleep 8
+
+            if pgrep -f '[j]ava -jar target/backend-0.0.1-SNAPSHOT.jar' > /dev/null; then
+              echo "Backend started successfully"
+              tail -n 50 app.log
+            else
+              echo "Backend failed to start"
+              tail -n 100 app.log
+              exit 1
+            fi
           EOF
