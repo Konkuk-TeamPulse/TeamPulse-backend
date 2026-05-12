@@ -53,36 +53,38 @@ jobs:
 
             if [ -n "$OLD_PID" ]; then
               echo "Stopping old backend process: $OLD_PID"
-              kill $OLD_PID
-              sleep 2
+              kill $OLD_PID || true
+              sleep 3
             else
               echo "No old backend process found"
             fi
 
-            nohup java -jar target/backend-0.0.1-SNAPSHOT.jar > app.log 2>&1 &
+            rm -f app.log
 
-            echo "Waiting for backend process and port 8080..."
+            nohup java -jar target/backend-0.0.1-SNAPSHOT.jar > app.log 2>&1 &
+            APP_PID=$!
+
+            echo "Started backend process with PID: $APP_PID"
+            echo "Waiting for Spring Boot startup log..."
 
             for i in {1..40}; do
-              if ! pgrep -f '[j]ava -jar target/backend-0.0.1-SNAPSHOT.jar' > /dev/null; then
-                echo "Backend process is not running"
-                tail -n 150 app.log
-                exit 1
+              if grep -q "Started BackendApplication" app.log; then
+                echo "Backend started successfully"
+                tail -n 100 app.log
+                exit 0
               fi
 
-              if ss -ltn | grep -q ':8080 '; then
-                echo "Backend process is running and port 8080 is open"
-                echo "Optional health response:"
-                curl -i http://127.0.0.1:8080/api/health || true
-                tail -n 80 app.log
-                exit 0
+              if ! kill -0 "$APP_PID" 2>/dev/null; then
+                echo "Backend process exited before startup completed"
+                tail -n 150 app.log
+                exit 1
               fi
 
               echo "Waiting... Retry $i/40"
               sleep 3
             done
 
-            echo "Backend failed to open port 8080 after waiting"
+            echo "Backend did not finish startup within timeout"
             tail -n 150 app.log
             exit 1
           EOF
