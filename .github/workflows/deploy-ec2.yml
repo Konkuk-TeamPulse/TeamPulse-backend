@@ -11,13 +11,22 @@ jobs:
 
     steps:
       - name: Deploy to EC2
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
         run: |
+          set -e
+
           mkdir -p ~/.ssh
           echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/teampulse-key.pem
           chmod 600 ~/.ssh/teampulse-key.pem
-          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
 
-          ssh -i ~/.ssh/teampulse-key.pem ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
+          if ! ssh-keyscan -T 10 -H "$EC2_HOST" >> ~/.ssh/known_hosts; then
+            echo "::error::Failed to reach EC2 SSH host. Check EC2_HOST, instance public IP, security group inbound TCP 22, and network ACLs."
+            exit 1
+          fi
+
+          ssh -o ConnectTimeout=10 -o ServerAliveInterval=15 -i ~/.ssh/teampulse-key.pem "$EC2_USER@$EC2_HOST" << 'EOF'
             set -e
 
             cd ~/TeamPulse-backend
