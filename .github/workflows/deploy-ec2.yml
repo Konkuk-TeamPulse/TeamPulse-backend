@@ -65,34 +65,31 @@ jobs:
             nohup java -jar target/backend-0.0.1-SNAPSHOT.jar > app.log 2>&1 &
 
             echo "Backend launch command executed"
-            echo "Waiting 25 seconds before printing logs..."
-            sleep 25
+            echo "Waiting 30 seconds before printing logs..."
+            sleep 30
 
             tail -n 120 app.log
 
             echo "Deploy command completed"
-            exit 0
           EOF
-
           DEPLOY_STATUS=$?
           set -e
 
           if [ "$DEPLOY_STATUS" -ne 0 ]; then
             echo "::warning::Deploy SSH command returned non-zero status: $DEPLOY_STATUS"
-            echo "Checking whether backend is actually running..."
           fi
 
-          ssh -o ConnectTimeout=10 -i ~/.ssh/teampulse-key.pem "$EC2_USER@$EC2_HOST" << 'EOF'
-            set -e
+          echo "Checking public backend health from GitHub Actions runner..."
 
-            cd ~/TeamPulse-backend
-
-            if curl -f http://127.0.0.1:8080/api/health; then
-              echo "Backend health check succeeded after deploy"
+          for i in {1..20}; do
+            if curl -f "http://$EC2_HOST:8080/api/health"; then
+              echo "Backend public health check succeeded"
               exit 0
-            else
-              echo "Backend health check failed after deploy"
-              tail -n 150 app.log
-              exit 1
             fi
-          EOF
+
+            echo "Public health check failed. Retry $i/20..."
+            sleep 3
+          done
+
+          echo "::error::Backend public health check failed after deploy"
+          exit 1
