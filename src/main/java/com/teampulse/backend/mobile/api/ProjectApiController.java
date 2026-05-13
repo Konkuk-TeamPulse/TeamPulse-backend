@@ -281,8 +281,7 @@ public class ProjectApiController {
         return ApiResponse.ok(projectWorkspaceUseCase.getProjectWorkspace(projectId).risks());
     }
 
-    // Deprecated: 프론트엔드는 리스크 목록 API GET /api/projects/{projectId}/risks 와 대시보드 API GET /api/projects/{projectId}/dashboard 를 사용합니다.
-    @Deprecated
+    // 리스크 목록에서 선택한 항목에 대해 프론트가 바로 표시할 수 있는 대응 옵션을 제공합니다.
     @GetMapping("/projects/{projectId}/risks/{riskId}/actions")
     public ApiResponse<List<RiskActionOption>> listRiskActions(@PathVariable long projectId, @PathVariable long riskId) {
         var workspace = projectWorkspaceUseCase.getProjectWorkspace(projectId);
@@ -471,16 +470,28 @@ public class ProjectApiController {
             case INFO -> "CAUTION";
         };
         var relatedTask = firstAffectedTask(risk, workspace.tasks());
+        var relatedMember = relatedTask == null ? null : memberByName(workspace.members(), relatedTask.owner());
         return new DashboardResponse.DashboardRisk(
-                risk.title().toUpperCase().replace(' ', '_'),
+                riskType(risk),
                 level,
                 risk.body(),
                 relatedTask == null ? null : relatedTask.id(),
                 relatedTask == null ? null : relatedTask.title(),
-                null,
-                null,
+                relatedMember == null ? null : relatedMember.id(),
+                relatedMember == null ? null : relatedMember.name(),
                 risk.affectedTaskIds(),
                 risk.suggestedActions());
+    }
+
+    private String riskType(RiskView risk) {
+        return switch ((int) risk.id()) {
+            case 101 -> "PROGRESS_STALLED";
+            case 102 -> "SCHEDULE_DELAY";
+            case 103 -> "DEPENDENCY_BLOCKED";
+            case 104 -> "WORKLOAD_CONCENTRATION";
+            case 105 -> "UPDATE_GAP";
+            default -> "RISK_REVIEW";
+        };
     }
 
     private long remainingDays(String projectEndDate, LocalDate today) {
@@ -509,7 +520,8 @@ public class ProjectApiController {
                 "ACTIVITY_RECORDED",
                 activity.summary(),
                 activity.actor(),
-                activity.at());
+                activity.at(),
+                activity.updatedAt());
     }
 
     private ProjectDetailView projectDetail(WorkspaceState workspace) {
@@ -984,7 +996,7 @@ public class ProjectApiController {
 
     private List<RiskActionOption> riskActions(RiskView risk, WorkspaceState workspace) {
         var affectedTask = firstAffectedTask(risk, workspace.tasks());
-        var overdueOrDueSoon = affectedTask == null ? firstOpenTaskByDueDate(workspace.tasks()) : affectedTask;
+        var dueTask = affectedTask == null ? firstOpenTaskByDueDate(workspace.tasks()) : affectedTask;
         var reassignmentTarget = affectedTask == null ? firstOpenTaskByOwnerLoad(workspace.tasks()) : affectedTask;
         var leastLoadedOwner = leastLoadedOwner(workspace);
 
@@ -993,44 +1005,44 @@ public class ProjectApiController {
                     new RiskActionOption(
                             "RESCHEDULE",
                             "일정 재조정",
-                            "지연 또는 임박한 태스크의 마감일을 뒤로 조정합니다.",
-                            overdueOrDueSoon == null ? null : overdueOrDueSoon.id(),
+                            "지연되었거나 마감이 임박한 작업의 마감일을 현실적인 날짜로 조정합니다.",
+                            dueTask == null ? null : dueTask.id(),
                             null,
-                            overdueOrDueSoon == null ? null : suggestedDueDate(overdueOrDueSoon.dueDate(), 2)),
+                            dueTask == null ? null : suggestedDueDate(dueTask.dueDate(), 2)),
                     new RiskActionOption(
                             "REASSIGN",
                             "작업 재할당",
-                            "마감 위험이 있는 태스크를 작업량이 적은 팀원에게 재배정합니다.",
-                            overdueOrDueSoon == null ? null : overdueOrDueSoon.id(),
+                            "마감 위험이 있는 작업을 현재 업무량이 낮은 팀원에게 재배치합니다.",
+                            dueTask == null ? null : dueTask.id(),
                             leastLoadedOwner,
                             null));
             case 103 -> List.of(
                     new RiskActionOption(
                             "UNBLOCK",
                             "선행 작업 정리",
-                            "블로커를 가진 태스크의 선행 작업을 우선 처리 대상으로 지정합니다.",
-                            overdueOrDueSoon == null ? null : overdueOrDueSoon.id(),
+                            "막힌 작업의 선행 작업을 먼저 처리하도록 우선순위를 조정합니다.",
+                            dueTask == null ? null : dueTask.id(),
                             null,
                             null),
                     new RiskActionOption(
                             "SPLIT_TASK",
                             "작업 분할",
-                            "막힌 작업을 더 작은 실행 단위로 나누어 병렬 진행 가능성을 높입니다.",
-                            overdueOrDueSoon == null ? null : overdueOrDueSoon.id(),
+                            "큰 작업을 더 작은 실행 단위로 나눠 병렬 진행 가능성을 높입니다.",
+                            dueTask == null ? null : dueTask.id(),
                             null,
                             null));
             case 104 -> List.of(
                     new RiskActionOption(
                             "REASSIGN",
                             "작업 재할당",
-                            "특정 팀원에게 집중된 태스크 일부를 다른 팀원에게 옮깁니다.",
+                            "특정 담당자에게 몰린 작업 일부를 다른 팀원에게 넘깁니다.",
                             reassignmentTarget == null ? null : reassignmentTarget.id(),
                             leastLoadedOwner,
                             null),
                     new RiskActionOption(
                             "RESCHEDULE",
                             "일정 재조정",
-                            "담당자 과부하가 큰 태스크의 마감일을 조정합니다.",
+                            "담당자 과부하가 큰 작업의 마감일을 조정합니다.",
                             reassignmentTarget == null ? null : reassignmentTarget.id(),
                             null,
                             reassignmentTarget == null ? null : suggestedDueDate(reassignmentTarget.dueDate(), 2)));
@@ -1062,6 +1074,16 @@ public class ProjectApiController {
             }
         }
         return null;
+    }
+
+    private MemberView memberByName(List<MemberView> members, String name) {
+        if (name == null || name.isBlank()) {
+            return null;
+        }
+        return members.stream()
+                .filter(member -> member.name().equalsIgnoreCase(name))
+                .findFirst()
+                .orElse(null);
     }
 
     private TaskView firstOpenTaskByDueDate(List<TaskView> tasks) {

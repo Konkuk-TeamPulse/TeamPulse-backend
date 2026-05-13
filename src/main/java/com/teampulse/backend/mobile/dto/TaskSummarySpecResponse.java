@@ -9,6 +9,7 @@ public record TaskSummarySpecResponse(
         TaskStatus status,
         String assigneeName,
         String dueDate,
-        List<Long> precedingTaskIds
+        List<Long> precedingTaskIds,
+        List<Long> blockedTaskIds
 ) {
 }

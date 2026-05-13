@@ -127,13 +127,16 @@ class WorkspaceControllerTest {
                         .header("Authorization", accessToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data[0].title").value("진행 정체"))
                 .andExpect(jsonPath("$.data[0].affectedTaskIds").isArray())
                 .andExpect(jsonPath("$.data[0].suggestedActions").isArray());
 
         mockMvc.perform(get("/api/projects/1/risks/101/actions")
                         .header("Authorization", accessToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data[0].type").value("RESCHEDULE"));
+                .andExpect(jsonPath("$.data[0].type").value("RESCHEDULE"))
+                .andExpect(jsonPath("$.data[0].label").value("일정 재조정"))
+                .andExpect(jsonPath("$.data[0].description").value("지연되었거나 마감이 임박한 작업의 마감일을 현실적인 날짜로 조정합니다."));
     }
 
     @Test
@@ -197,6 +200,13 @@ class WorkspaceControllerTest {
                 .andExpect(jsonPath("$.result.startDate").value("2026-04-01"))
                 .andExpect(jsonPath("$.result.endDate").value("2026-06-09"))
                 .andExpect(jsonPath("$.result.memberCount").value(1));
+
+        mockMvc.perform(get("/api/projects/999")
+                        .header("Authorization", accessToken))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.isSuccess").value(false))
+                .andExpect(jsonPath("$.responseCode").value(4001))
+                .andExpect(jsonPath("$.responseMessage").value("프로젝트를 찾을 수 없습니다."));
 
         mockMvc.perform(patch("/api/projects/1")
                         .header("Authorization", accessToken)
@@ -277,7 +287,8 @@ class WorkspaceControllerTest {
                 .andExpect(jsonPath("$.responseCode").value(1000))
                 .andExpect(jsonPath("$.result[0].logId").isNumber())
                 .andExpect(jsonPath("$.result[0].content").exists())
-                .andExpect(jsonPath("$.result[0].userName").value("Account Owner"));
+                .andExpect(jsonPath("$.result[0].userName").value("Account Owner"))
+                .andExpect(jsonPath("$.result[0].updatedAt").exists());
 
         mockMvc.perform(get("/api/projects/1/members")
                         .header("Authorization", accessToken))
@@ -322,6 +333,22 @@ class WorkspaceControllerTest {
                 .andExpect(jsonPath("$.isSuccess").value(true))
                 .andReturn();
         Number assigneeId = JsonPath.read(membersResult.getResponse().getContentAsString(), "$.result[0].memberId");
+
+        mockMvc.perform(post("/api/projects/1/tasks")
+                        .header("Authorization", accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "title": "Invalid assignee task",
+                                  "description": "Should fail with typed error",
+                                  "assigneeId": 999999,
+                                  "dueDate": "2026-04-28"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.isSuccess").value(false))
+                .andExpect(jsonPath("$.responseCode").value(4002))
+                .andExpect(jsonPath("$.responseMessage").value("팀원을 찾을 수 없습니다."));
 
         MvcResult createResult = mockMvc.perform(post("/api/projects/1/tasks")
                         .header("Authorization", accessToken)
@@ -371,14 +398,33 @@ class WorkspaceControllerTest {
                 .andExpect(jsonPath("$.isSuccess").value(true))
                 .andExpect(jsonPath("$.responseCode").value(1000))
                 .andExpect(jsonPath("$.result.taskId").value(taskId.longValue()))
-                .andExpect(jsonPath("$.result.precedingTaskId").value(precedingTaskId.longValue()));
+                .andExpect(jsonPath("$.result.precedingTaskId").value(precedingTaskId.longValue()))
+                .andExpect(jsonPath("$.result.taskTitle").value("Write API spec"))
+                .andExpect(jsonPath("$.result.precedingTaskTitle").value("Prepare API data"));
 
         mockMvc.perform(get("/api/projects/1/tasks")
                         .header("Authorization", accessToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.isSuccess").value(true))
                 .andExpect(jsonPath("$.result[?(@.taskId == %d)].precedingTaskIds[0]".formatted(taskId.longValue()))
-                        .value(hasItem(precedingTaskId.intValue())));
+                        .value(hasItem(precedingTaskId.intValue())))
+                .andExpect(jsonPath("$.result[?(@.taskId == %d)].blockedTaskIds[0]".formatted(precedingTaskId.longValue()))
+                        .value(hasItem(taskId.intValue())));
+
+        mockMvc.perform(get("/api/projects/1/dashboard")
+                        .header("Authorization", accessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.result.risks[0].type").value("PROGRESS_STALLED"))
+                .andExpect(jsonPath("$.result.risks[0].relatedTaskId").value(precedingTaskId.longValue()))
+                .andExpect(jsonPath("$.result.risks[0].relatedMemberName").value("Task Owner"));
+
+        mockMvc.perform(get("/api/projects/1/risks/999/actions")
+                        .header("Authorization", accessToken))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.isSuccess").value(false))
+                .andExpect(jsonPath("$.responseCode").value(4007))
+                .andExpect(jsonPath("$.responseMessage").value("리스크를 찾을 수 없습니다."));
 
         mockMvc.perform(post("/api/tasks/{taskId}/dependencies", precedingTaskId.longValue())
                         .header("Authorization", accessToken)

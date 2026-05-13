@@ -52,7 +52,8 @@ public class ProjectTaskApiController {
                         task.status(),
                         task.owner(),
                         task.dueDate(),
-                        precedingTaskIds(task, taskIdsByTitle)))
+                        precedingTaskIds(task, taskIdsByTitle),
+                        blockedTaskIds(task, workspace.tasks())))
                 .toList();
         return SpecResponse.ok(SUCCESS_MESSAGE, tasks);
     }
@@ -151,6 +152,16 @@ public class ProjectTaskApiController {
         return task.blockers().stream()
                 .flatMap(blocker -> taskIdsByTitle.getOrDefault(blocker, List.of()).stream())
                 .filter(taskId -> taskId != task.id())
+                .distinct()
+                .toList();
+    }
+
+    private List<Long> blockedTaskIds(TaskView task, List<TaskView> tasks) {
+        return tasks.stream()
+                .filter(candidate -> candidate.id() != task.id())
+                .filter(candidate -> candidate.blockers().stream()
+                        .anyMatch(blocker -> blocker.equalsIgnoreCase(task.title())))
+                .map(TaskView::id)
                 .distinct()
                 .toList();
     }

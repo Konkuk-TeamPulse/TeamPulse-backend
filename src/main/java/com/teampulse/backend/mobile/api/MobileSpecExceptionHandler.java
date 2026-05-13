@@ -52,6 +52,12 @@ public class MobileSpecExceptionHandler {
                 || "Task dependency cycle is not allowed.".equals(message)) {
             return 3006;
         }
+        if ("Project not found.".equals(message)) {
+            return 4001;
+        }
+        if ("Member not found.".equals(message) || "Assignee not found.".equals(message)) {
+            return 4002;
+        }
         if ("Task not found.".equals(message)) {
             return 4004;
         }
@@ -63,6 +69,9 @@ public class MobileSpecExceptionHandler {
         }
         if ("Report not found.".equals(message)) {
             return 4006;
+        }
+        if ("Risk not found.".equals(message)) {
+            return 4007;
         }
         if (message != null && message.contains("project 1")) {
             return 3002;
@@ -77,8 +86,26 @@ public class MobileSpecExceptionHandler {
         if ("Task dependency cycle is not allowed.".equals(message)) {
             return "순환되는 태스크 의존관계는 설정할 수 없습니다.";
         }
+        if ("Project not found.".equals(message)) {
+            return "프로젝트를 찾을 수 없습니다.";
+        }
+        if ("Member not found.".equals(message) || "Assignee not found.".equals(message)) {
+            return "팀원을 찾을 수 없습니다.";
+        }
+        if ("Task not found.".equals(message)) {
+            return "태스크를 찾을 수 없습니다.";
+        }
+        if ("Meeting not found.".equals(message)) {
+            return "회의록을 찾을 수 없습니다.";
+        }
         if ("Report data is insufficient.".equals(message)) {
             return "리포트를 생성할 활동 기록이 부족합니다.";
+        }
+        if ("Report not found.".equals(message)) {
+            return "리포트를 찾을 수 없습니다.";
+        }
+        if ("Risk not found.".equals(message)) {
+            return "리스크를 찾을 수 없습니다.";
         }
         return message == null || message.isBlank() ? VALIDATION_MESSAGE : message;
     }

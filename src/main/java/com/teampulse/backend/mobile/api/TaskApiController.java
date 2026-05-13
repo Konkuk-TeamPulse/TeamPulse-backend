@@ -91,7 +91,11 @@ public class TaskApiController {
             throw new IllegalArgumentException("Task cannot depend on itself.");
         }
         projectWorkspaceUseCase.addTaskDependencyById(taskId, new TaskDependencyRequest(precedingTask.title()));
-        return SpecResponse.ok(TASK_DEPENDENCY_ADDED_MESSAGE, new TaskDependencySpecResponse(taskId, precedingTask.id()));
+        return SpecResponse.ok(TASK_DEPENDENCY_ADDED_MESSAGE, new TaskDependencySpecResponse(
+                taskId,
+                precedingTask.id(),
+                task.title(),
+                precedingTask.title()));
     }
 
     @DeleteMapping("/{taskId}/dependencies/{dependencyId}")
