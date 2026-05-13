@@ -5,6 +5,7 @@ import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.startsWith;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -613,6 +614,8 @@ class WorkspaceControllerTest {
                 .andExpect(jsonPath("$.result.expiredAt").exists())
                 .andReturn();
         String inviteCode = JsonPath.read(invitationResult.getResponse().getContentAsString(), "$.result.inviteCode");
+        String inviteUrl = JsonPath.read(invitationResult.getResponse().getContentAsString(), "$.result.inviteUrl");
+        assertThat(inviteUrl).isEqualTo("https://teampulse.com/invite/" + inviteCode);
 
         mockMvc.perform(get("/api/invitations/{inviteCode}", inviteCode))
                 .andExpect(status().isOk())
@@ -643,6 +646,24 @@ class WorkspaceControllerTest {
                 .andExpect(jsonPath("$.result.projectId").value(1))
                 .andExpect(jsonPath("$.result.projectName").value("Invitation Project"))
                 .andExpect(jsonPath("$.result.role").value("MEMBER"));
+
+        MvcResult legacyInviteResult = mockMvc.perform(post("/api/projects/1/invite-links")
+                        .header("Authorization", leaderToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.inviteCode").isString())
+                .andExpect(jsonPath("$.data.url", startsWith("https://teampulse.com/invite/")))
+                .andExpect(jsonPath("$.data.inviteUrl", startsWith("https://teampulse.com/invite/")))
+                .andReturn();
+        assertThat((String) JsonPath.read(legacyInviteResult.getResponse().getContentAsString(), "$.data.inviteUrl"))
+                .isEqualTo(JsonPath.read(legacyInviteResult.getResponse().getContentAsString(), "$.data.url"));
+    }
+
+    @Test
+    void deployedFrontendOriginsAreAllowedForInvitationCorsPreflight() throws Exception {
+        assertCorsPreflightAllowed("https://team-pulse-frontend.vercel.app");
+        assertCorsPreflightAllowed("https://teampulse.com");
+        assertCorsPreflightAllowed("https://www.teampulse.com");
     }
 
     @Test
@@ -761,5 +782,15 @@ class WorkspaceControllerTest {
                 .andExpect(status().isOk())
                 .andReturn();
         return JsonPath.read(signupResult.getResponse().getContentAsString(), "$.result.jwtInfo.accessToken");
+    }
+
+    private void assertCorsPreflightAllowed(String origin) throws Exception {
+        mockMvc.perform(options("/api/projects/1/invitations")
+                        .header("Origin", origin)
+                        .header("Access-Control-Request-Method", "POST")
+                        .header("Access-Control-Request-Headers", "authorization,content-type"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Access-Control-Allow-Origin", origin))
+                .andExpect(header().string("Access-Control-Allow-Credentials", "true"));
     }
 }

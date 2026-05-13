@@ -1,12 +1,13 @@
 package com.teampulse.backend.mobile.application.service;
 
-
-import com.teampulse.backend.mobile.dto.*;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.teampulse.backend.domain.risk.RiskSeverity;
 import com.teampulse.backend.domain.task.TaskStatus;
 import com.teampulse.backend.domain.team.TeamRole;
+import com.teampulse.backend.mobile.dto.MemberView;
+import com.teampulse.backend.mobile.dto.RiskView;
+import com.teampulse.backend.mobile.dto.TaskView;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -37,10 +38,10 @@ class RiskEngineTest {
         assertThat(risks).extracting(RiskView::id).contains(101L, 102L, 103L, 104L, 105L);
         assertThat(risks).extracting(RiskView::title)
                 .contains("진행 정체", "일정 지연 위험", "병목 구간", "역할 편중", "업데이트 부족");
-        assertThat(risks).extracting(RiskView::severity).contains(RiskSeverity.CRITICAL, RiskSeverity.WARNING, RiskSeverity.INFO);
+        assertThat(risks).extracting(RiskView::severity)
+                .contains(RiskSeverity.CRITICAL, RiskSeverity.WARNING, RiskSeverity.INFO);
         assertThat(risks).extracting(RiskView::body)
                 .allSatisfy(body -> assertThat(body).doesNotContain("점수", "평가", "기여도"));
-
         assertThat(riskById(risks, 101).affectedTaskIds()).containsExactly(1L, 3L);
         assertThat(riskById(risks, 102).affectedTaskIds()).containsExactly(1L, 2L, 3L);
         assertThat(riskById(risks, 103).affectedTaskIds()).containsExactly(2L);

@@ -60,6 +60,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -96,15 +97,18 @@ public class ProjectApiController {
     private final WorkspaceQueryUseCase workspaceQueryUseCase;
     private final ProjectWorkspaceUseCase projectWorkspaceUseCase;
     private final MobileAccountUseCase mobileAccountUseCase;
+    private final String frontendPublicBaseUrl;
 
     public ProjectApiController(
             WorkspaceQueryUseCase workspaceQueryUseCase,
             ProjectWorkspaceUseCase projectWorkspaceUseCase,
-            MobileAccountUseCase mobileAccountUseCase
+            MobileAccountUseCase mobileAccountUseCase,
+            @Value("${app.frontend.public-base-url:https://teampulse.com}") String frontendPublicBaseUrl
     ) {
         this.workspaceQueryUseCase = workspaceQueryUseCase;
         this.projectWorkspaceUseCase = projectWorkspaceUseCase;
         this.mobileAccountUseCase = mobileAccountUseCase;
+        this.frontendPublicBaseUrl = normalizeBaseUrl(frontendPublicBaseUrl);
     }
 
     // Deprecated: 프론트엔드는 현재 사용자 조회 API GET /api/users/me 를 사용합니다.
@@ -533,11 +537,13 @@ public class ProjectApiController {
     }
 
     private Map<String, Object> invitePayload(WorkspaceState workspace) {
+        var inviteUrl = invitationUrl(workspace.team().inviteCode());
         return Map.of(
                 "projectId", workspace.projectId(),
                 "token", workspace.team().inviteCode(),
                 "inviteCode", workspace.team().inviteCode(),
-                "url", "/invite/" + workspace.team().inviteCode()
+                "url", inviteUrl,
+                "inviteUrl", inviteUrl
         );
     }
 
@@ -546,8 +552,19 @@ public class ProjectApiController {
                 Math.abs((long) team.inviteCode().hashCode()),
                 projectId,
                 team.inviteCode(),
-                "https://teampulse.com/invite/" + team.inviteCode(),
+                invitationUrl(team.inviteCode()),
                 LocalDateTime.now().plusDays(7).truncatedTo(ChronoUnit.SECONDS).toString());
+    }
+
+    private String invitationUrl(String inviteCode) {
+        return frontendPublicBaseUrl + "/invite/" + inviteCode;
+    }
+
+    private static String normalizeBaseUrl(String value) {
+        if (value == null || value.isBlank()) {
+            return "https://teampulse.com";
+        }
+        return value.trim().replaceAll("/+$", "");
     }
 
     private void requireReportable(WorkspaceState workspace) {
