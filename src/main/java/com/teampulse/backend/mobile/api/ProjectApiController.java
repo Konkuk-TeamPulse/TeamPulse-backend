@@ -103,7 +103,7 @@ public class ProjectApiController {
             WorkspaceQueryUseCase workspaceQueryUseCase,
             ProjectWorkspaceUseCase projectWorkspaceUseCase,
             MobileAccountUseCase mobileAccountUseCase,
-            @Value("${app.frontend.public-base-url:https://teampulse.com}") String frontendPublicBaseUrl
+            @Value("${app.frontend.public-base-url:https://teampulse-frontend-ruddy.vercel.app}") String frontendPublicBaseUrl
     ) {
         this.workspaceQueryUseCase = workspaceQueryUseCase;
         this.projectWorkspaceUseCase = projectWorkspaceUseCase;
@@ -574,7 +574,7 @@ public class ProjectApiController {
 
     private static String normalizeBaseUrl(String value) {
         if (value == null || value.isBlank()) {
-            return "https://teampulse.com";
+            return "https://teampulse-frontend-ruddy.vercel.app";
         }
         return value.trim().replaceAll("/+$", "");
     }

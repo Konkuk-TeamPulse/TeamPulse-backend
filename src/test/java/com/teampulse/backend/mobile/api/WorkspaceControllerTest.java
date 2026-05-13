@@ -661,7 +661,7 @@ class WorkspaceControllerTest {
                 .andReturn();
         String inviteCode = JsonPath.read(invitationResult.getResponse().getContentAsString(), "$.result.inviteCode");
         String inviteUrl = JsonPath.read(invitationResult.getResponse().getContentAsString(), "$.result.inviteUrl");
-        assertThat(inviteUrl).isEqualTo("https://teampulse.com/invite/" + inviteCode);
+        assertThat(inviteUrl).isEqualTo("https://teampulse-frontend-ruddy.vercel.app/invite/" + inviteCode);
 
         mockMvc.perform(get("/api/invitations/{inviteCode}", inviteCode))
                 .andExpect(status().isOk())
@@ -698,8 +698,8 @@ class WorkspaceControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.inviteCode").isString())
-                .andExpect(jsonPath("$.data.url", startsWith("https://teampulse.com/invite/")))
-                .andExpect(jsonPath("$.data.inviteUrl", startsWith("https://teampulse.com/invite/")))
+                .andExpect(jsonPath("$.data.url", startsWith("https://teampulse-frontend-ruddy.vercel.app/invite/")))
+                .andExpect(jsonPath("$.data.inviteUrl", startsWith("https://teampulse-frontend-ruddy.vercel.app/invite/")))
                 .andReturn();
         assertThat((String) JsonPath.read(legacyInviteResult.getResponse().getContentAsString(), "$.data.inviteUrl"))
                 .isEqualTo(JsonPath.read(legacyInviteResult.getResponse().getContentAsString(), "$.data.url"));
