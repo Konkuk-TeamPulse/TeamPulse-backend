@@ -26,31 +26,17 @@ jobs:
             exit 1
           fi
 
-          set +e
-          ssh -o ConnectTimeout=10 -o ServerAliveInterval=15 -i ~/.ssh/teampulse-key.pem "$EC2_USER@$EC2_HOST" << 'EOF'
+          ssh -o ConnectTimeout=10 -o ServerAliveInterval=15 -i ~/.ssh/teampulse-key.pem "$EC2_USER@$EC2_HOST" 'bash -se' << 'EOF'
             set -e
 
             cd ~/TeamPulse-backend
 
-            git fetch origin main
-            git reset --hard origin/main
+            git pull origin main
 
             chmod +x ./mvnw
-            ./mvnw clean package -DskipTests
+            ./mvnw clean package spring-boot:repackage -DskipTests
 
-            if [ ! -f ~/.teampulse.env ]; then
-              echo "Missing ~/.teampulse.env"
-              exit 1
-            fi
-
-            set -a
-            source ~/.teampulse.env
-            set +a
-
-            echo "SPRING_PROFILES_ACTIVE=$SPRING_PROFILES_ACTIVE"
-            echo "APP_CORS_ALLOWED_ORIGINS=$APP_CORS_ALLOWED_ORIGINS"
-
-            OLD_PID=$(pgrep -f '[j]ava -jar target/backend-0.0.1-SNAPSHOT.jar' || true)
+            OLD_PID=$(pgrep -f '[b]ackend-0.0.1-SNAPSHOT.jar' || true)
 
             if [ -n "$OLD_PID" ]; then
               echo "Stopping old backend process: $OLD_PID"
@@ -60,36 +46,24 @@ jobs:
               echo "No old backend process found"
             fi
 
+            if [ ! -f .env ]; then
+              echo "Missing .env"
+              exit 1
+            fi
+
+            set -a
+            source .env
+            set +a
+
             rm -f app.log
 
             nohup java -jar target/backend-0.0.1-SNAPSHOT.jar > app.log 2>&1 &
 
             echo "Backend launch command executed"
-            echo "Waiting 30 seconds before printing logs..."
-            sleep 30
+            echo "Waiting 15 seconds before health check..."
+            sleep 15
 
-            tail -n 120 app.log
+            curl --fail --max-time 10 http://localhost:8080/api/health
 
-            echo "Deploy command completed"
+            echo "Backend health check succeeded"
           EOF
-          DEPLOY_STATUS=$?
-          set -e
-
-          if [ "$DEPLOY_STATUS" -ne 0 ]; then
-            echo "::warning::Deploy SSH command returned non-zero status: $DEPLOY_STATUS"
-          fi
-
-          echo "Checking public backend health from GitHub Actions runner..."
-
-          for i in {1..20}; do
-            if curl -f "http://$EC2_HOST:8080/api/health"; then
-              echo "Backend public health check succeeded"
-              exit 0
-            fi
-
-            echo "Public health check failed. Retry $i/20..."
-            sleep 3
-          done
-
-          echo "::error::Backend public health check failed after deploy"
-          exit 1
