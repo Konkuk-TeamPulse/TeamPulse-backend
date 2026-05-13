@@ -85,6 +85,7 @@ public class ProjectApiController {
     private static final String SUCCESS_MESSAGE = "\uC694\uCCAD\uC5D0 \uC131\uACF5\uD588\uC2B5\uB2C8\uB2E4.";
     private static final String PROJECT_CREATED_MESSAGE = "\uD504\uB85C\uC81D\uD2B8\uAC00 \uC0DD\uC131\uB418\uC5C8\uC2B5\uB2C8\uB2E4.";
     private static final String REPORT_CREATED_MESSAGE = "\uB9AC\uD3EC\uD2B8\uAC00 \uC0DD\uC131\uB418\uC5C8\uC2B5\uB2C8\uB2E4.";
+    private static final String DEFAULT_FRONTEND_PUBLIC_BASE_URL = "https://team-pulse-frontend.vercel.app";
     private static final Color REPORT_INK = new Color(17, 24, 39);
     private static final Color REPORT_MUTED = new Color(107, 114, 128);
     private static final Color REPORT_LINE = new Color(226, 232, 240);
@@ -103,7 +104,7 @@ public class ProjectApiController {
             WorkspaceQueryUseCase workspaceQueryUseCase,
             ProjectWorkspaceUseCase projectWorkspaceUseCase,
             MobileAccountUseCase mobileAccountUseCase,
-            @Value("${app.frontend.public-base-url:https://teampulse-frontend-ruddy.vercel.app}") String frontendPublicBaseUrl
+            @Value("${app.frontend.public-base-url:" + DEFAULT_FRONTEND_PUBLIC_BASE_URL + "}") String frontendPublicBaseUrl
     ) {
         this.workspaceQueryUseCase = workspaceQueryUseCase;
         this.projectWorkspaceUseCase = projectWorkspaceUseCase;
@@ -574,7 +575,7 @@ public class ProjectApiController {
 
     private static String normalizeBaseUrl(String value) {
         if (value == null || value.isBlank()) {
-            return "https://teampulse-frontend-ruddy.vercel.app";
+            return DEFAULT_FRONTEND_PUBLIC_BASE_URL;
         }
         return value.trim().replaceAll("/+$", "");
     }
