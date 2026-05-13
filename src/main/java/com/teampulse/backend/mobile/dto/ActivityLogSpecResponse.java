@@ -5,6 +5,7 @@ public record ActivityLogSpecResponse(
         String action,
         String content,
         String userName,
-        String createdAt
+        String createdAt,
+        String updatedAt
 ) {
 }

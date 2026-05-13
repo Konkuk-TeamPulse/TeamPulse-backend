@@ -37,7 +37,7 @@ class RiskEngineTest {
 
         assertThat(risks).extracting(RiskView::id).contains(101L, 102L, 103L, 104L, 105L);
         assertThat(risks).extracting(RiskView::title)
-                .contains("진행 정체", "일정 지연 위험", "병목 구간", "역할 편중", "업데이트 부족");
+                .contains("진행 정체", "일정 지연 위험", "병목 구간", "역할 집중", "업데이트 부족");
         assertThat(risks).extracting(RiskView::severity)
                 .contains(RiskSeverity.CRITICAL, RiskSeverity.WARNING, RiskSeverity.INFO);
         assertThat(risks).extracting(RiskView::body)
