@@ -26,13 +26,44 @@ jobs:
             exit 1
           fi
 
-          ssh -o ConnectTimeout=10 -o ServerAliveInterval=15 -i ~/.ssh/teampulse-key.pem "$EC2_USER@$EC2_HOST" 'bash -se' << 'EOF'
+          ssh -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=20 -i ~/.ssh/teampulse-key.pem "$EC2_USER@$EC2_HOST" 'bash -se' << 'EOF'
             set -e
 
             cd ~/TeamPulse-backend
 
             echo "Pulling latest code..."
             git pull origin main
+
+            if [ ! -f .env ]; then
+              echo "::error::Missing .env on deployment server."
+              exit 1
+            fi
+
+            echo "Checking required environment variables..."
+            while IFS='=' read -r KEY VALUE || [ -n "$KEY" ]; do
+              case "$KEY" in
+                ''|\#*) continue ;;
+              esac
+
+              export "$KEY=$VALUE"
+            done < .env
+
+            REQUIRED_ENV_VARS=(
+              "SPRING_PROFILES_ACTIVE"
+              "SPRING_DATASOURCE_URL"
+              "SPRING_DATASOURCE_USERNAME"
+              "SPRING_DATASOURCE_PASSWORD"
+              "APP_CORS_ALLOWED_ORIGINS"
+              "APP_FRONTEND_PUBLIC_BASE_URL"
+            )
+
+            for KEY in "${REQUIRED_ENV_VARS[@]}"; do
+              if [ -z "${!KEY}" ]; then
+                echo "::error::Missing required environment variable: $KEY"
+                exit 1
+              fi
+              echo "$KEY=SET"
+            done
 
             echo "Building Spring Boot jar..."
             chmod +x ./mvnw
@@ -47,16 +78,6 @@ jobs:
             else
               echo "No old backend process found"
             fi
-
-            if [ ! -f .env ]; then
-              echo "Missing .env"
-              exit 1
-            fi
-
-            echo "Loading environment variables..."
-            set -a
-            source .env
-            set +a
 
             rm -f app.log
 
