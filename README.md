@@ -1,117 +1,90 @@
 # TeamPulse Backend
 
-Spring Boot 기반 TeamPulse 백엔드입니다.
+Spring Boot 기반 TeamPulse 백엔드. 회원가입, 프로젝트, 태스크, 회의록, 초대, 리포트, 리스크 API를 제공한다.
 
-## 실행
+- 운영 배포: https://teampulse-api.duckdns.org
+- Frontend repo: https://github.com/Konkuk-TeamPulse/TeamPulse-frontend
+- 운영 상태 확인: `GET /api/health` -> `status=UP`, `storageMode=mysql`
+
+---
+
+## 실행 환경
+
+- Java 17 이상
+- Maven Wrapper (`./mvnw` 또는 `.\mvnw.cmd`) 포함
+- 운영 DB: MySQL (AWS RDS), 로컬 데모는 인메모리
+
+## 환경변수 (.env)
+
+운영 또는 로컬에서 MySQL 프로필로 실행할 때 다음 변수를 정의한다. `.env.example` 참고.
+
+| 변수 | 설명 |
+|---|---|
+| `PORT` | 서버 포트 (기본 8080) |
+| `SPRING_PROFILES_ACTIVE` | `mysql` (운영) / `demo` (로컬 인메모리) |
+| `SPRING_DATASOURCE_URL` | `jdbc:mysql://<host>:3306/teampulse?useSSL=true&serverTimezone=Asia/Seoul&characterEncoding=UTF-8` |
+| `SPRING_DATASOURCE_USERNAME` | DB 사용자 |
+| `SPRING_DATASOURCE_PASSWORD` | DB 비밀번호 |
+| `APP_CORS_ALLOWED_ORIGINS` | 콤마 구분 origin 목록 (운영 프론트 도메인 포함) |
+| `APP_FRONTEND_PUBLIC_BASE_URL` | 초대 링크 생성용 프론트 base URL |
+
+비밀값은 commit 하지 않는다. 운영 환경에서는 GitHub Actions/EC2 시크릿으로 주입한다.
+
+## 로컬 실행
+
+### 운영(MySQL) 프로필
 
 ```powershell
+$env:SPRING_PROFILES_ACTIVE="mysql"
+$env:SPRING_DATASOURCE_URL="jdbc:mysql://<host>:3306/teampulse?useSSL=true&serverTimezone=Asia/Seoul"
+$env:SPRING_DATASOURCE_USERNAME="<user>"
+$env:SPRING_DATASOURCE_PASSWORD="<password>"
 .\mvnw.cmd spring-boot:run
 ```
 
-기본 포트는 `8080`이다.
+### 데모(인메모리) 프로필
+
+```powershell
+.\mvnw.cmd spring-boot:run "-Dspring-boot.run.profiles=demo"
+```
+
+데모 프로필은 인메모리 저장이며 재시작 시 데이터가 초기화된다.
 
 ## 테스트
 
 ```powershell
-.\mvnw.cmd test
+.\mvnw.cmd test "-Dspring.profiles.active=demo"
 ```
 
-로컬 Maven Wrapper 문제가 있으면 설치된 Maven으로 실행할 수 있다.
+현재 main(`2fa5c46`) 기준 JUnit/MockMvc 테스트 25개 통과 (Tests run: 25, Failures: 0, Errors: 0).
 
-```powershell
-mvn test
-```
+## 배포
+
+- main 브랜치 push -> GitHub Actions(`.github/workflows/deploy-ec2.yml`)가 EC2 인스턴스에 SSH 접속하여 빌드/재기동.
+- 배포 직후 `curl http://localhost:8080/api/health`가 30회까지 재시도로 헬스체크.
 
 ## 주요 API
 
-현재 프론트 데모와 연결되는 모바일 API는 `/api/mobile/...` 경로를 사용한다.
+명세형 API 응답은 `isSuccess`, `responseCode`, `responseMessage`, `result` wrapper를 사용한다.
 
-- `GET /api/mobile/workspace`
-- `POST /api/mobile/workspace/bootstrap`
-- `POST /api/mobile/workspace/reset`
-- `POST /api/mobile/workspace/sample`
-- `POST /api/mobile/tasks`
-- `PATCH /api/mobile/tasks/{taskId}/status`
-- `DELETE /api/mobile/tasks/{taskId}`
-- `POST /api/mobile/meetings`
-- `POST /api/mobile/reports`
-- `PATCH /api/mobile/team`
-- `POST /api/mobile/team/regenerate-invite`
-- `POST /api/mobile/members`
-- `DELETE /api/mobile/members/{memberId}`
+- 인증: `POST /api/auth/signup`, `/login`, `/logout`
+- 프로젝트: `POST/GET/PATCH /api/projects`, `GET /api/projects/{id}/dashboard`
+- 태스크: `POST/GET /api/projects/{id}/tasks`, `PATCH/DELETE /api/tasks/{id}`, `PATCH /api/tasks/{id}/status`
+- 의존관계: `POST /api/tasks/{id}/dependencies`, `DELETE /api/tasks/{id}/dependencies/{dependencyId}`
+- 회의록: `POST/GET /api/projects/{id}/meetings`, `GET /api/projects/{id}/meetings/{meetingId}`
+- 초대: `POST /api/projects/{id}/invitations`, `GET/POST /api/invitations/{code}`
+- 리포트: `POST /api/projects/{id}/reports`, `GET /api/reports/{id}/download`
+- 리스크: `GET /api/projects/{id}/risks`, `/risks/{riskId}/actions`
+- 헬스: `GET /api/health`
 
-노션 API 명세와 맞춘 경로도 함께 제공한다. 기존 모바일 API는 하위 호환용으로 유지한다.
+## 디렉터리 구조
 
-- `POST /api/auth/signup`
-- `POST /api/auth/login`
-- `POST /api/auth/logout`
-- `POST /api/projects`
-- `GET /api/projects`
-- `GET /api/projects/{projectId}`
-- `PATCH /api/projects/{projectId}`
-- `POST /api/projects/{projectId}/tasks`
-- `GET /api/projects/{projectId}/tasks`
-- `PATCH /api/tasks/{taskId}`
-- `DELETE /api/tasks/{taskId}`
-- `PATCH /api/tasks/{taskId}/status`
-- `POST /api/projects/{projectId}/meetings`
-- `GET /api/projects/{projectId}/meetings`
-- `GET /api/projects/{projectId}/meetings/{meetingId}`
-- `GET /api/projects/{projectId}/dashboard`
-- `GET /api/users/me`
-- `POST /api/tasks/{taskId}/dependencies`
-- `DELETE /api/tasks/{taskId}/dependencies/{dependencyId}`
-- `GET /api/projects/{projectId}/activity-logs`
-- `DELETE /api/projects/{projectId}/members/me`
-- `GET /api/projects/{projectId}/members`
+- `auth.api` 인증 컨트롤러
+- `mobile.api` REST 컨트롤러 (프론트 연동)
+- `mobile.application(.service)` UseCase와 서비스 구현 (InMemory/Jpa 두 가지)
+- `mobile.dto` 요청/응답 record
+- `mobile.persistence` JPA 엔티티, Repository
+- `common` 공통 설정과 예외 처리
+- `domain` 핵심 도메인 enum
 
-명세형 API의 성공/실패 응답은 `isSuccess`, `responseCode`, `responseMessage`, `result` wrapper를 사용한다. 현재 MVP는 `projectId=1` 단일 프로젝트와 demo access token 기준이다.
-
-## 구조
-
-- `mobile.api`: 현재 프론트와 연결되는 REST 컨트롤러
-- `mobile.application`: 기능별 UseCase 인터페이스와 서비스 계약
-- `mobile.application.service`: UseCase 구현체와 위험도 계산 로직
-- `mobile.dto`: API 요청/응답 record
-- `mobile.persistence`: JPA 엔티티, Repository, Converter
-- `common`: 공통 설정과 예외 처리
-- `domain`: JPA 엔티티
-- `repository`: 데이터 접근 계층
-
-`mobile` 패키지는 API, Application, DTO, Persistence 책임을 나눠 두었다. 이후 실제 회원가입, 팀, 과제, 회의, 리포트 기능을 확장할 때 각 기능의 Controller, UseCase, Service, Entity를 분리해서 담당자별 작업이 가능하다.
-
-## 구조 원칙
-
-- 현재 규모에서는 기능별 하위 패키지를 지나치게 늘리지 않는다.
-- 컨트롤러는 HTTP 요청/응답만 담당한다.
-- UseCase 인터페이스는 프론트가 호출하는 기능 단위의 계약만 표현한다.
-- 서비스 구현체는 현재 `InMemoryWorkspaceService`, `JpaWorkspaceService` 두 개로 유지한다.
-- DTO는 외부 API 계약이므로 `mobile.dto`에 모아 관리한다.
-- 저장소/JPA 엔티티는 `mobile.persistence`에 모아 둔다.
-
-이 구조는 과제/데모 단계에서는 단순하게 유지하고, 실제 기능이 커질 때 `task`, `meeting`, `team`, `report` 같은 도메인별 패키지로 확장할 수 있도록 만든 절충안이다.
-
-## 로컬 검증
-
-다음 항목을 로컬에서 확인했다.
-
-- `mvn test -Dspring.profiles.active=demo` 통과
-- `.\mvnw.cmd test '-Dspring.profiles.active=demo'` 통과
-- 로컬 서버 `spring-boot:run`, demo profile, `18080` 포트 기동 확인
-- `GET /api/health`
-- `GET /api/mobile/workspace`
-- `POST /api/mobile/workspace/bootstrap`
-- `POST /api/mobile/members`
-- `POST /api/mobile/tasks`
-- `POST /api/mobile/meetings`
-- `POST /api/mobile/reports`
-
-검증 결과:
-
-- health status: `UP`
-- workspace 조회 성공
-- bootstrap 후 workspace 초기화 성공
-- 멤버 추가 성공
-- 태스크 추가 성공
-- 회의 추가 및 action task 생성 성공
-- 리포트 생성 성공
+규모가 커지면 `task`, `meeting`, `team`, `report` 같은 도메인별 패키지로 확장한다.
