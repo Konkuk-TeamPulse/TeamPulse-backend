@@ -40,11 +40,16 @@ jobs:
             fi
 
             echo "Checking required environment variables..."
-            set -a
-            source .env
-            set +a
+            while IFS='=' read -r KEY VALUE || [ -n "$KEY" ]; do
+              case "$KEY" in
+                ''|\#*) continue ;;
+              esac
+
+              export "$KEY=$VALUE"
+            done < .env
 
             REQUIRED_ENV_VARS=(
+              "SPRING_PROFILES_ACTIVE"
               "SPRING_DATASOURCE_URL"
               "SPRING_DATASOURCE_USERNAME"
               "SPRING_DATASOURCE_PASSWORD"
