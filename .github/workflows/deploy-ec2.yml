@@ -8,6 +8,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - name: Deploy to EC2
@@ -78,7 +79,7 @@ jobs:
 
             echo "Building Spring Boot jar..."
             chmod +x ./mvnw
-            ./mvnw clean package spring-boot:repackage -DskipTests
+            timeout 600s ./mvnw clean package spring-boot:repackage -DskipTests
 
             OLD_PID=$(pgrep -f '[b]ackend-0.0.1-SNAPSHOT.jar' || true)
 
@@ -93,9 +94,11 @@ jobs:
             rm -f app.log
 
             echo "Starting backend..."
-            nohup java -jar target/backend-0.0.1-SNAPSHOT.jar > app.log 2>&1 &
+            nohup java -jar target/backend-0.0.1-SNAPSHOT.jar > app.log 2>&1 < /dev/null &
+            BACKEND_PID=$!
+            disown -a 2>/dev/null || true
 
-            echo "Backend launch command executed"
+            echo "Backend launch command executed with PID $BACKEND_PID"
             echo "Waiting for backend health check..."
 
             for i in {1..30}; do
