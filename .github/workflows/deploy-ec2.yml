@@ -49,12 +49,9 @@ jobs:
             done < .env
 
             REQUIRED_ENV_VARS=(
-              "SPRING_PROFILES_ACTIVE"
               "SPRING_DATASOURCE_URL"
               "SPRING_DATASOURCE_USERNAME"
               "SPRING_DATASOURCE_PASSWORD"
-              "APP_CORS_ALLOWED_ORIGINS"
-              "APP_FRONTEND_PUBLIC_BASE_URL"
             )
 
             for KEY in "${REQUIRED_ENV_VARS[@]}"; do
@@ -63,6 +60,20 @@ jobs:
                 exit 1
               fi
               echo "$KEY=SET"
+            done
+
+            OPTIONAL_ENV_VARS=(
+              "SPRING_PROFILES_ACTIVE"
+              "APP_CORS_ALLOWED_ORIGINS"
+              "APP_FRONTEND_PUBLIC_BASE_URL"
+            )
+
+            for KEY in "${OPTIONAL_ENV_VARS[@]}"; do
+              if [ -z "${!KEY}" ]; then
+                echo "$KEY=DEFAULT"
+              else
+                echo "$KEY=SET"
+              fi
             done
 
             echo "Building Spring Boot jar..."
