@@ -404,64 +404,93 @@ public class ProjectApiController {
 
     private DashboardResponse dashboard(WorkspaceState workspace) {
         var tasks = workspace.tasks();
+        var dashboardRisks = workspace.risks().stream()
+                .map(risk -> dashboardRisk(risk, workspace))
+                .toList();
+
+        return new DashboardResponse(
+                workspace.projectId(),
+                workspace.team().name(),
+                taskSummary(tasks),
+                scheduleSummary(workspace, tasks),
+                memberWorkload(workspace, tasks),
+                riskSummary(dashboardRisks),
+                dashboardRisks);
+    }
+
+    private DashboardResponse.TaskSummary taskSummary(List<TaskView> tasks) {
         var doneCount = (int) tasks.stream().filter(task -> task.status() == TaskStatus.DONE).count();
         var todoCount = (int) tasks.stream().filter(task -> task.status() == TaskStatus.TODO).count();
         var doingCount = (int) tasks.stream().filter(task -> task.status() == TaskStatus.DOING).count();
         var totalCount = tasks.size();
         var progressRate = totalCount == 0 ? 0.0 : Math.round((doneCount * 1000.0 / totalCount)) / 10.0;
-        var today = LocalDate.now();
+        return new DashboardResponse.TaskSummary(totalCount, todoCount, doingCount, doneCount, progressRate);
+    }
 
-        var taskSummary = new DashboardResponse.TaskSummary(totalCount, todoCount, doingCount, doneCount, progressRate);
-        var scheduleSummary = new DashboardResponse.ScheduleSummary(
+    private DashboardResponse.ScheduleSummary scheduleSummary(WorkspaceState workspace, List<TaskView> tasks) {
+        var today = LocalDate.now();
+        return new DashboardResponse.ScheduleSummary(
                 workspace.team().startDate(),
                 workspace.team().dueDate(),
                 remainingDays(workspace.team().dueDate(), today),
-                (int) tasks.stream()
-                        .filter(task -> task.status() != TaskStatus.DONE)
-                        .filter(task -> parseDateOrMax(task.dueDate()).isBefore(today))
-                        .count(),
-                (int) tasks.stream()
-                        .filter(task -> task.status() != TaskStatus.DONE)
-                        .filter(task -> {
-                            var dueDate = parseDateOrMax(task.dueDate());
-                            return !dueDate.equals(LocalDate.MAX)
-                                    && !dueDate.isBefore(today)
-                                    && ChronoUnit.DAYS.between(today, dueDate) <= 3;
-                        })
-                        .count());
+                overdueTaskCount(tasks, today),
+                dueSoonTaskCount(tasks, today));
+    }
 
-        var memberWorkload = workspace.members().stream()
+    private List<DashboardResponse.MemberWorkload> memberWorkload(WorkspaceState workspace, List<TaskView> tasks) {
+        return workspace.members().stream()
                 .map(member -> new DashboardResponse.MemberWorkload(
                         member.id(),
                         member.name(),
-                        (int) tasks.stream().filter(task -> task.owner().equalsIgnoreCase(member.name())).count(),
-                        (int) tasks.stream()
-                                .filter(task -> task.owner().equalsIgnoreCase(member.name()))
-                                .filter(task -> task.status() == TaskStatus.DONE)
-                                .count()))
+                        memberTaskCount(tasks, member),
+                        memberDoneTaskCount(tasks, member)))
                 .toList();
+    }
 
-        var dashboardRisks = workspace.risks().stream()
-                .map(risk -> dashboardRisk(risk, workspace))
-                .toList();
+    private DashboardResponse.RiskSummary riskSummary(List<DashboardResponse.DashboardRisk> dashboardRisks) {
         var dangerCount = (int) dashboardRisks.stream().filter(risk -> risk.level().equals("DANGER")).count();
         var warningCount = (int) dashboardRisks.stream().filter(risk -> risk.level().equals("WARNING")).count();
         var cautionCount = (int) dashboardRisks.stream().filter(risk -> risk.level().equals("CAUTION")).count();
-        var riskSummary = new DashboardResponse.RiskSummary(
+        return new DashboardResponse.RiskSummary(
                 dashboardRisks.size(),
                 cautionCount,
                 warningCount,
                 dangerCount,
                 dangerCount > 0);
+    }
 
-        return new DashboardResponse(
-                workspace.projectId(),
-                workspace.team().name(),
-                taskSummary,
-                scheduleSummary,
-                memberWorkload,
-                riskSummary,
-                dashboardRisks);
+    private int overdueTaskCount(List<TaskView> tasks, LocalDate today) {
+        return (int) tasks.stream()
+                .filter(task -> task.status() != TaskStatus.DONE)
+                .filter(task -> parseDateOrMax(task.dueDate()).isBefore(today))
+                .count();
+    }
+
+    private int dueSoonTaskCount(List<TaskView> tasks, LocalDate today) {
+        return (int) tasks.stream()
+                .filter(task -> task.status() != TaskStatus.DONE)
+                .filter(task -> isDueWithinThreeDays(task, today))
+                .count();
+    }
+
+    private boolean isDueWithinThreeDays(TaskView task, LocalDate today) {
+        var dueDate = parseDateOrMax(task.dueDate());
+        return !dueDate.equals(LocalDate.MAX)
+                && !dueDate.isBefore(today)
+                && ChronoUnit.DAYS.between(today, dueDate) <= 3;
+    }
+
+    private int memberTaskCount(List<TaskView> tasks, MemberView member) {
+        return (int) tasks.stream()
+                .filter(task -> task.owner().equalsIgnoreCase(member.name()))
+                .count();
+    }
+
+    private int memberDoneTaskCount(List<TaskView> tasks, MemberView member) {
+        return (int) tasks.stream()
+                .filter(task -> task.owner().equalsIgnoreCase(member.name()))
+                .filter(task -> task.status() == TaskStatus.DONE)
+                .count();
     }
 
     private DashboardResponse.DashboardRisk dashboardRisk(RiskView risk, WorkspaceState workspace) {
@@ -1002,68 +1031,86 @@ public class ProjectApiController {
         var leastLoadedOwner = leastLoadedOwner(workspace);
 
         return switch ((int) risk.id()) {
-            case 101, 102 -> List.of(
-                    new RiskActionOption(
-                            "RESCHEDULE",
-                            "일정 재조정",
-                            "지연되었거나 마감이 임박한 작업의 마감일을 현실적인 날짜로 조정합니다.",
-                            dueTask == null ? null : dueTask.id(),
-                            null,
-                            dueTask == null ? null : suggestedDueDate(dueTask.dueDate(), 2)),
-                    new RiskActionOption(
-                            "REASSIGN",
-                            "작업 재할당",
-                            "마감 위험이 있는 작업을 현재 업무량이 낮은 팀원에게 재배치합니다.",
-                            dueTask == null ? null : dueTask.id(),
-                            leastLoadedOwner,
-                            null));
-            case 103 -> List.of(
-                    new RiskActionOption(
-                            "UNBLOCK",
-                            "선행 작업 정리",
-                            "막힌 작업의 선행 작업을 먼저 처리하도록 우선순위를 조정합니다.",
-                            dueTask == null ? null : dueTask.id(),
-                            null,
-                            null),
-                    new RiskActionOption(
-                            "SPLIT_TASK",
-                            "작업 분할",
-                            "큰 작업을 더 작은 실행 단위로 나눠 병렬 진행 가능성을 높입니다.",
-                            dueTask == null ? null : dueTask.id(),
-                            null,
-                            null));
-            case 104 -> List.of(
-                    new RiskActionOption(
-                            "REASSIGN",
-                            "작업 재할당",
-                            "특정 담당자에게 몰린 작업 일부를 다른 팀원에게 넘깁니다.",
-                            reassignmentTarget == null ? null : reassignmentTarget.id(),
-                            leastLoadedOwner,
-                            null),
-                    new RiskActionOption(
-                            "RESCHEDULE",
-                            "일정 재조정",
-                            "담당자 과부하가 큰 작업의 마감일을 조정합니다.",
-                            reassignmentTarget == null ? null : reassignmentTarget.id(),
-                            null,
-                            reassignmentTarget == null ? null : suggestedDueDate(reassignmentTarget.dueDate(), 2)));
-            case 105 -> List.of(
-                    new RiskActionOption(
-                            "SCHEDULE_MEETING",
-                            "회의 일정 등록",
-                            "누락된 회의록을 보완하기 위해 동기화 회의를 등록합니다.",
-                            null,
-                            null,
-                            LocalDate.now().plusDays(1).toString()));
-            default -> List.of(
-                    new RiskActionOption(
-                            "REVIEW",
-                            "리스크 검토",
-                            "담당자가 리스크 상태를 확인하고 필요한 대응을 선택합니다.",
-                            null,
-                            null,
-                            null));
+            case 101, 102 -> deadlineRiskActions(dueTask, leastLoadedOwner);
+            case 103 -> blockedRiskActions(dueTask);
+            case 104 -> concentrationRiskActions(reassignmentTarget, leastLoadedOwner);
+            case 105 -> meetingRiskActions();
+            default -> reviewRiskActions();
         };
+    }
+
+    private List<RiskActionOption> deadlineRiskActions(TaskView dueTask, String leastLoadedOwner) {
+        return List.of(
+                new RiskActionOption(
+                        "RESCHEDULE",
+                        "일정 재조정",
+                        "지연되었거나 마감이 임박한 작업의 마감일을 현실적인 날짜로 조정합니다.",
+                        dueTask == null ? null : dueTask.id(),
+                        null,
+                        dueTask == null ? null : suggestedDueDate(dueTask.dueDate(), 2)),
+                new RiskActionOption(
+                        "REASSIGN",
+                        "작업 재할당",
+                        "마감 위험이 있는 작업을 현재 업무량이 더 낮은 팀원에게 재배치합니다.",
+                        dueTask == null ? null : dueTask.id(),
+                        leastLoadedOwner,
+                        null));
+    }
+
+    private List<RiskActionOption> blockedRiskActions(TaskView dueTask) {
+        return List.of(
+                new RiskActionOption(
+                        "UNBLOCK",
+                        "선행 작업 정리",
+                        "막힌 작업의 선행 작업을 먼저 처리하도록 우선순위를 조정합니다.",
+                        dueTask == null ? null : dueTask.id(),
+                        null,
+                        null),
+                new RiskActionOption(
+                        "SPLIT_TASK",
+                        "작업 분할",
+                        "큰 작업을 더 작은 실행 단위로 나눠 병렬 진행 가능성을 높입니다.",
+                        dueTask == null ? null : dueTask.id(),
+                        null,
+                        null));
+    }
+
+    private List<RiskActionOption> concentrationRiskActions(TaskView reassignmentTarget, String leastLoadedOwner) {
+        return List.of(
+                new RiskActionOption(
+                        "REASSIGN",
+                        "작업 재할당",
+                        "특정 담당자에게 몰린 작업 일부를 다른 팀원에게 넘깁니다.",
+                        reassignmentTarget == null ? null : reassignmentTarget.id(),
+                        leastLoadedOwner,
+                        null),
+                new RiskActionOption(
+                        "RESCHEDULE",
+                        "일정 재조정",
+                        "담당자 과부하가 큰 작업의 마감일을 조정합니다.",
+                        reassignmentTarget == null ? null : reassignmentTarget.id(),
+                        null,
+                        reassignmentTarget == null ? null : suggestedDueDate(reassignmentTarget.dueDate(), 2)));
+    }
+
+    private List<RiskActionOption> meetingRiskActions() {
+        return List.of(new RiskActionOption(
+                "SCHEDULE_MEETING",
+                "회의 일정 등록",
+                "누락된 회의록을 보완하기 위해 동기화 회의를 등록합니다.",
+                null,
+                null,
+                LocalDate.now().plusDays(1).toString()));
+    }
+
+    private List<RiskActionOption> reviewRiskActions() {
+        return List.of(new RiskActionOption(
+                "REVIEW",
+                "리스크 검토",
+                "담당자가 리스크 상태를 확인하고 필요한 대응을 선택합니다.",
+                null,
+                null,
+                null));
     }
 
     private TaskView firstAffectedTask(RiskView risk, List<TaskView> tasks) {

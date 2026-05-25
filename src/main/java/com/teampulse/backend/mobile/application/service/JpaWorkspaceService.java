@@ -769,50 +769,11 @@ public class JpaWorkspaceService implements WorkspaceService {
     }
 
     private WorkspaceState toWorkspaceState(MobileWorkspaceEntity workspace) {
-        var members = workspace.getMembers().stream()
-                .sorted(Comparator.comparing(MobileMemberEntity::getId))
-                .map(member -> new MemberView(member.getId(), member.getName(), member.getEmail(), member.getRole()))
-                .toList();
-
-        var tasks = workspace.getTasks().stream()
-                .map(task -> new TaskView(
-                        task.getId(),
-                        task.getTitle(),
-                        task.getOwner(),
-                        task.getStatus(),
-                        task.getDueDate(),
-                        task.getPriority(),
-                        safeList(task.getBlockers()),
-                        safeList(task.getNext()),
-                        task.getNote()))
-                .sorted(Comparator.comparing(TaskView::status).thenComparing(TaskView::dueDate))
-                .toList();
-
-        var meetings = workspace.getMeetings().stream()
-                .sorted(Comparator.comparing(MobileMeetingEntity::getId).reversed())
-                .map(meeting -> new MeetingView(
-                        meeting.getId(),
-                        meeting.getTitle(),
-                        meeting.getTime(),
-                        meeting.getAgenda(),
-                        defaultText(meeting.getContent(), ""),
-                        safeList(meeting.getDecisions()),
-                        safeList(meeting.getActions()),
-                        parseLongList(meeting.getAttendeeIds()),
-                        decodeActionItems(meeting.getActionItems()),
-                        defaultText(meeting.getCreatedAt(), meeting.getTime()),
-                        defaultText(meeting.getUpdatedAt(), defaultText(meeting.getCreatedAt(), meeting.getTime()))))
-                .toList();
-
-        var activities = workspace.getActivities().stream()
-                .sorted(Comparator.comparing(MobileActivityEntity::getId).reversed())
-                .map(activity -> new ActivityView(activity.getId(), activity.getActor(), activity.getAt(), activity.getSummary()))
-                .toList();
-
-        var reports = workspace.getReports().stream()
-                .sorted(Comparator.comparing(MobileReportEntity::getId).reversed())
-                .map(report -> new ReportView(report.getId(), report.getLabel(), report.getRangeValue(), report.getStatus()))
-                .toList();
+        var members = memberViews(workspace);
+        var tasks = taskViews(workspace);
+        var meetings = meetingViews(workspace);
+        var activities = activityViews(workspace);
+        var reports = reportViews(workspace);
 
         return new WorkspaceState(
                 workspace.getId() == null ? 1L : workspace.getId(),
@@ -836,6 +797,61 @@ public class JpaWorkspaceService implements WorkspaceService {
                 List.copyOf(activities),
                 List.copyOf(reports),
                 List.copyOf(riskEngine.deriveRisks(tasks, meetings, members)));
+    }
+
+    private List<MemberView> memberViews(MobileWorkspaceEntity workspace) {
+        return workspace.getMembers().stream()
+                .sorted(Comparator.comparing(MobileMemberEntity::getId))
+                .map(member -> new MemberView(member.getId(), member.getName(), member.getEmail(), member.getRole()))
+                .toList();
+    }
+
+    private List<TaskView> taskViews(MobileWorkspaceEntity workspace) {
+        return workspace.getTasks().stream()
+                .map(task -> new TaskView(
+                        task.getId(),
+                        task.getTitle(),
+                        task.getOwner(),
+                        task.getStatus(),
+                        task.getDueDate(),
+                        task.getPriority(),
+                        safeList(task.getBlockers()),
+                        safeList(task.getNext()),
+                        task.getNote()))
+                .sorted(Comparator.comparing(TaskView::status).thenComparing(TaskView::dueDate))
+                .toList();
+    }
+
+    private List<MeetingView> meetingViews(MobileWorkspaceEntity workspace) {
+        return workspace.getMeetings().stream()
+                .sorted(Comparator.comparing(MobileMeetingEntity::getId).reversed())
+                .map(meeting -> new MeetingView(
+                        meeting.getId(),
+                        meeting.getTitle(),
+                        meeting.getTime(),
+                        meeting.getAgenda(),
+                        defaultText(meeting.getContent(), ""),
+                        safeList(meeting.getDecisions()),
+                        safeList(meeting.getActions()),
+                        parseLongList(meeting.getAttendeeIds()),
+                        decodeActionItems(meeting.getActionItems()),
+                        defaultText(meeting.getCreatedAt(), meeting.getTime()),
+                        defaultText(meeting.getUpdatedAt(), defaultText(meeting.getCreatedAt(), meeting.getTime()))))
+                .toList();
+    }
+
+    private List<ActivityView> activityViews(MobileWorkspaceEntity workspace) {
+        return workspace.getActivities().stream()
+                .sorted(Comparator.comparing(MobileActivityEntity::getId).reversed())
+                .map(activity -> new ActivityView(activity.getId(), activity.getActor(), activity.getAt(), activity.getSummary()))
+                .toList();
+    }
+
+    private List<ReportView> reportViews(MobileWorkspaceEntity workspace) {
+        return workspace.getReports().stream()
+                .sorted(Comparator.comparing(MobileReportEntity::getId).reversed())
+                .map(report -> new ReportView(report.getId(), report.getLabel(), report.getRangeValue(), report.getStatus()))
+                .toList();
     }
 
     private MobileWorkspaceEntity emptyWorkspace() {
