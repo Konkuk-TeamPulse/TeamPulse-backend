@@ -31,21 +31,9 @@ public interface ProjectWorkspaceUseCase {
 
     WorkspaceState regenerateProjectInviteCode(long projectId);
 
-    WorkspaceState addProjectMember(long projectId, CreateMemberRequest request);
-
     WorkspaceState deleteProjectMember(long projectId, long memberId);
 
     WorkspaceState createProjectTask(long projectId, CreateTaskRequest request);
-
-    WorkspaceState updateProjectTask(long projectId, long taskId, UpdateTaskRequest request);
-
-    WorkspaceState updateProjectTaskStatus(long projectId, long taskId, UpdateTaskStatusRequest request);
-
-    WorkspaceState deleteProjectTask(long projectId, long taskId);
-
-    WorkspaceState addProjectTaskDependency(long projectId, long taskId, TaskDependencyRequest request);
-
-    WorkspaceState deleteProjectTaskDependency(long projectId, long taskId, String dependencyTitle);
 
     WorkspaceState updateTaskById(long taskId, UpdateTaskRequest request);
 

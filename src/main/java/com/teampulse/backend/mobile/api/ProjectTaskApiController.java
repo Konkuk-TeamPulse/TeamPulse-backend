@@ -1,26 +1,20 @@
 package com.teampulse.backend.mobile.api;
 
-import com.teampulse.backend.common.api.ApiResponse;
 import com.teampulse.backend.common.api.SpecResponse;
 import com.teampulse.backend.mobile.application.ProjectWorkspaceUseCase;
 import com.teampulse.backend.mobile.dto.CreateTaskRequest;
 import com.teampulse.backend.mobile.dto.MemberView;
 import com.teampulse.backend.mobile.dto.TaskCreateSpecRequest;
 import com.teampulse.backend.mobile.dto.TaskCreateSpecResponse;
-import com.teampulse.backend.mobile.dto.TaskDependencyRequest;
 import com.teampulse.backend.mobile.dto.TaskSummarySpecResponse;
 import com.teampulse.backend.mobile.dto.TaskView;
-import com.teampulse.backend.mobile.dto.UpdateTaskRequest;
-import com.teampulse.backend.mobile.dto.UpdateTaskStatusRequest;
 import com.teampulse.backend.mobile.dto.WorkspaceState;
 import jakarta.validation.Valid;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
-import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -81,56 +75,10 @@ public class ProjectTaskApiController {
     }
 
     // Deprecated: 프론트엔드는 프로젝트 ID 없는 태스크 수정 API PATCH /api/tasks/{taskId} 를 사용합니다.
-    @Deprecated
-    @PatchMapping("/{taskId}")
-    public ApiResponse<WorkspaceState> updateTask(
-            @PathVariable long projectId,
-            @PathVariable long taskId,
-            @Valid @RequestBody UpdateTaskRequest request
-    ) {
-        return ApiResponse.ok(projectWorkspaceUseCase.updateProjectTask(projectId, taskId, request));
-    }
-
     // Deprecated: 프론트엔드는 프로젝트 ID 없는 태스크 삭제 API DELETE /api/tasks/{taskId} 를 사용합니다.
-    @Deprecated
-    @DeleteMapping("/{taskId}")
-    public ApiResponse<WorkspaceState> deleteTask(@PathVariable long projectId, @PathVariable long taskId) {
-        return ApiResponse.ok(projectWorkspaceUseCase.deleteProjectTask(projectId, taskId));
-    }
-
     // Deprecated: 프론트엔드는 프로젝트 ID 없는 상태 변경 API PATCH /api/tasks/{taskId}/status 를 사용합니다.
-    @Deprecated
-    @PatchMapping("/{taskId}/status")
-    public ApiResponse<WorkspaceState> updateTaskStatus(
-            @PathVariable long projectId,
-            @PathVariable long taskId,
-            @Valid @RequestBody UpdateTaskStatusRequest request
-    ) {
-        return ApiResponse.ok(projectWorkspaceUseCase.updateProjectTaskStatus(projectId, taskId, request));
-    }
-
     // Deprecated: 프론트엔드는 프로젝트 ID 없는 의존성 추가 API POST /api/tasks/{taskId}/dependencies 를 사용합니다.
-    @Deprecated
-    @PostMapping("/{taskId}/dependencies")
-    public ApiResponse<WorkspaceState> addDependency(
-            @PathVariable long projectId,
-            @PathVariable long taskId,
-            @Valid @RequestBody TaskDependencyRequest request
-    ) {
-        return ApiResponse.ok(projectWorkspaceUseCase.addProjectTaskDependency(projectId, taskId, request));
-    }
-
     // Deprecated: 프론트엔드는 프로젝트 ID 없는 의존성 삭제 API DELETE /api/tasks/{taskId}/dependencies/{dependencyId} 를 사용합니다.
-    @Deprecated
-    @DeleteMapping("/{taskId}/dependencies/{dependencyTitle}")
-    public ApiResponse<WorkspaceState> deleteDependency(
-            @PathVariable long projectId,
-            @PathVariable long taskId,
-            @PathVariable String dependencyTitle
-    ) {
-        return ApiResponse.ok(projectWorkspaceUseCase.deleteProjectTaskDependency(projectId, taskId, dependencyTitle));
-    }
-
     private MemberView requireMemberById(WorkspaceState workspace, long memberId) {
         return workspace.members().stream()
                 .filter(member -> member.id() == memberId)

@@ -5,13 +5,11 @@ import com.teampulse.backend.common.api.SpecResponse;
 import com.teampulse.backend.auth.domain.AuthUser;
 import com.teampulse.backend.domain.task.TaskStatus;
 import com.teampulse.backend.domain.team.TeamRole;
-import com.teampulse.backend.mobile.application.MobileAccountUseCase;
 import com.teampulse.backend.mobile.application.ProjectWorkspaceUseCase;
 import com.teampulse.backend.mobile.application.WorkspaceQueryUseCase;
 import com.teampulse.backend.mobile.dto.ActivityView;
 import com.teampulse.backend.mobile.dto.ActivityLogSpecResponse;
 import com.teampulse.backend.mobile.dto.BootstrapWorkspaceRequest;
-import com.teampulse.backend.mobile.dto.CreateMemberRequest;
 import com.teampulse.backend.mobile.dto.DashboardResponse;
 import com.teampulse.backend.mobile.dto.InvitationCreateResponse;
 import com.teampulse.backend.mobile.dto.MeetingActionItemView;
@@ -31,7 +29,6 @@ import com.teampulse.backend.mobile.dto.RiskActionOption;
 import com.teampulse.backend.mobile.dto.RiskView;
 import com.teampulse.backend.mobile.dto.TaskView;
 import com.teampulse.backend.mobile.dto.TeamProfile;
-import com.teampulse.backend.mobile.dto.UpdateAccountRequest;
 import com.teampulse.backend.mobile.dto.UpdateTeamRequest;
 import com.teampulse.backend.mobile.dto.UserMeResponse;
 import com.teampulse.backend.mobile.dto.UserProfile;
@@ -97,35 +94,20 @@ public class ProjectApiController {
 
     private final WorkspaceQueryUseCase workspaceQueryUseCase;
     private final ProjectWorkspaceUseCase projectWorkspaceUseCase;
-    private final MobileAccountUseCase mobileAccountUseCase;
     private final String frontendPublicBaseUrl;
 
     public ProjectApiController(
             WorkspaceQueryUseCase workspaceQueryUseCase,
             ProjectWorkspaceUseCase projectWorkspaceUseCase,
-            MobileAccountUseCase mobileAccountUseCase,
             @Value("${app.frontend.public-base-url:" + DEFAULT_FRONTEND_PUBLIC_BASE_URL + "}") String frontendPublicBaseUrl
     ) {
         this.workspaceQueryUseCase = workspaceQueryUseCase;
         this.projectWorkspaceUseCase = projectWorkspaceUseCase;
-        this.mobileAccountUseCase = mobileAccountUseCase;
         this.frontendPublicBaseUrl = normalizeBaseUrl(frontendPublicBaseUrl);
     }
 
     // Deprecated: 프론트엔드는 현재 사용자 조회 API GET /api/users/me 를 사용합니다.
-    @Deprecated
-    @GetMapping("/account")
-    public ApiResponse<UserProfile> getAccount() {
-        return ApiResponse.ok(workspaceQueryUseCase.getWorkspace().user());
-    }
-
     // Deprecated: 프론트엔드는 현재 계정 수정 API를 호출하지 않고 GET /api/users/me 로 사용자 정보를 조회합니다.
-    @Deprecated
-    @PatchMapping("/account")
-    public ApiResponse<UserProfile> updateAccount(@Valid @RequestBody UpdateAccountRequest request) {
-        return ApiResponse.ok(mobileAccountUseCase.updateAccount(request).user());
-    }
-
     @GetMapping("/users/me")
     public SpecResponse<UserMeResponse> getCurrentUser(Authentication authentication) {
         var workspace = workspaceQueryUseCase.getWorkspace();
@@ -133,16 +115,6 @@ public class ProjectApiController {
     }
 
     // Deprecated: 프론트엔드는 프로젝트 활동 로그 API GET /api/projects/{projectId}/activity-logs 를 사용합니다.
-    @Deprecated
-    @GetMapping("/account/activities")
-    public ApiResponse<List<ActivityView>> listAccountActivities() {
-        var workspace = workspaceQueryUseCase.getWorkspace();
-        var currentUser = workspace.user().name();
-        return ApiResponse.ok(workspace.activities().stream()
-                .filter(activity -> activity.actor().equalsIgnoreCase(currentUser))
-                .toList());
-    }
-
     @PostMapping("/projects")
     public SpecResponse<ProjectCreateResponse> createProject(
             @Valid @RequestBody ProjectCreateRequest request,
@@ -208,15 +180,6 @@ public class ProjectApiController {
     }
 
     // Deprecated: 프론트엔드는 멤버 직접 추가 API를 호출하지 않고 초대 API POST /api/projects/{projectId}/invitations 를 사용합니다.
-    @Deprecated
-    @PostMapping("/projects/{projectId}/members")
-    public ApiResponse<WorkspaceState> addMember(
-            @PathVariable long projectId,
-            @Valid @RequestBody CreateMemberRequest request
-    ) {
-        return ApiResponse.ok(projectWorkspaceUseCase.addProjectMember(projectId, request));
-    }
-
     @DeleteMapping("/projects/{projectId}/members/me")
     public SpecResponse<Void> leaveProject(@PathVariable long projectId, Authentication authentication) {
         var workspace = projectWorkspaceUseCase.getProjectWorkspace(projectId);
@@ -237,23 +200,7 @@ public class ProjectApiController {
     }
 
     // Deprecated: 프론트엔드는 현재 사용자 탈퇴 API DELETE /api/projects/{projectId}/members/me 를 사용합니다.
-    @Deprecated
-    @DeleteMapping("/projects/{projectId}/members/{memberId}")
-    public ApiResponse<WorkspaceState> deleteMember(@PathVariable long projectId, @PathVariable long memberId) {
-        return ApiResponse.ok(projectWorkspaceUseCase.deleteProjectMember(projectId, memberId));
-    }
-
     // Deprecated: 프론트엔드는 초대 생성 API POST /api/projects/{projectId}/invitations 를 사용합니다.
-    @Deprecated
-    @PostMapping("/projects/{projectId}/invite-links")
-    public ApiResponse<Map<String, Object>> createInviteLink(
-            @PathVariable long projectId,
-            Authentication authentication
-    ) {
-        var workspace = projectWorkspaceUseCase.regenerateProjectInviteCode(projectId);
-        return ApiResponse.ok(invitePayload(workspace));
-    }
-
     @PostMapping("/projects/{projectId}/invitations")
     public SpecResponse<InvitationCreateResponse> createInvitation(
             @PathVariable long projectId,
@@ -264,12 +211,6 @@ public class ProjectApiController {
     }
 
     // Deprecated: 프론트엔드는 활동 로그 API GET /api/projects/{projectId}/activity-logs 를 사용합니다.
-    @Deprecated
-    @GetMapping("/projects/{projectId}/activities")
-    public ApiResponse<List<ActivityView>> listActivities(@PathVariable long projectId) {
-        return ApiResponse.ok(projectWorkspaceUseCase.getProjectWorkspace(projectId).activities());
-    }
-
     @GetMapping("/projects/{projectId}/activity-logs")
     public SpecResponse<List<ActivityLogSpecResponse>> listActivityLogs(@PathVariable long projectId) {
         return SpecResponse.ok(SUCCESS_MESSAGE, projectWorkspaceUseCase.getProjectWorkspace(projectId).activities().stream()
@@ -309,23 +250,7 @@ public class ProjectApiController {
     }
 
     // Deprecated: 프론트엔드는 리포트 생성 API POST /api/projects/{projectId}/reports 와 다운로드 API GET /api/reports/{reportId}/download 를 사용합니다.
-    @Deprecated
-    @GetMapping("/projects/{projectId}/reports")
-    public SpecResponse<List<ReportView>> listReports(@PathVariable long projectId) {
-        return SpecResponse.ok(SUCCESS_MESSAGE, projectWorkspaceUseCase.getProjectWorkspace(projectId).reports());
-    }
-
     // Deprecated: 프론트엔드는 프로젝트 ID 없는 다운로드 API GET /api/reports/{reportId}/download 를 사용합니다.
-    @Deprecated
-    @GetMapping("/projects/{projectId}/reports/{reportId}/download")
-    public void downloadReport(
-            @PathVariable long projectId,
-            @PathVariable long reportId,
-            HttpServletResponse response
-    ) throws IOException {
-        writeReportDownloadResponse(projectWorkspaceUseCase.getProjectWorkspace(projectId), reportId, response);
-    }
-
     @GetMapping("/reports/{reportId}/download")
     public void downloadReport(@PathVariable long reportId, HttpServletResponse response) throws IOException {
         writeReportDownloadResponse(projectWorkspaceUseCase.getProjectWorkspaceByReportId(reportId), reportId, response);
@@ -575,17 +500,6 @@ public class ProjectApiController {
                 workspace.team().startDate(),
                 workspace.team().dueDate(),
                 LocalDateTime.now().toString()
-        );
-    }
-
-    private Map<String, Object> invitePayload(WorkspaceState workspace) {
-        var inviteUrl = invitationUrl(workspace.team().inviteCode());
-        return Map.of(
-                "projectId", workspace.projectId(),
-                "token", workspace.team().inviteCode(),
-                "inviteCode", workspace.team().inviteCode(),
-                "url", inviteUrl,
-                "inviteUrl", inviteUrl
         );
     }
 

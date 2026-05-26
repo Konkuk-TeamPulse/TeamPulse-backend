@@ -171,19 +171,6 @@ public class InMemoryWorkspaceService implements WorkspaceService {
         return recompute();
     }
 
-    public synchronized WorkspaceState updateAccount(UpdateAccountRequest request) {
-        ensureInitialized();
-        var current = workspace.user();
-        var user = new UserProfile(
-                defaultText(request.name(), current.name()),
-                defaultText(request.email(), current.email()),
-                defaultText(request.university(), current.university()),
-                defaultText(request.phone(), current.phone()));
-        var activities = prependActivity(workspace.activities(), activity(user.name(), "Account profile updated."));
-        workspace = copy(workspace, user, workspace.tasks(), workspace.meetings(), activities, workspace.reports(), workspace.members(), workspace.team());
-        return recompute();
-    }
-
     public synchronized WorkspaceState updateTask(long taskId, UpdateTaskRequest request) {
         ensureInitialized();
 
@@ -321,20 +308,8 @@ public class InMemoryWorkspaceService implements WorkspaceService {
     }
 
     @Override
-    public synchronized WorkspaceState updateProjectTask(long projectId, long taskId, UpdateTaskRequest request) {
-        requireProjectId(projectId);
-        return updateTask(taskId, request);
-    }
-
-    @Override
     public synchronized WorkspaceState updateTaskById(long taskId, UpdateTaskRequest request) {
         return updateTask(taskId, request);
-    }
-
-    @Override
-    public synchronized WorkspaceState updateProjectTaskStatus(long projectId, long taskId, UpdateTaskStatusRequest request) {
-        requireProjectId(projectId);
-        return updateTaskStatus(taskId, request);
     }
 
     @Override
@@ -343,31 +318,13 @@ public class InMemoryWorkspaceService implements WorkspaceService {
     }
 
     @Override
-    public synchronized WorkspaceState deleteProjectTask(long projectId, long taskId) {
-        requireProjectId(projectId);
-        return deleteTask(taskId);
-    }
-
-    @Override
     public synchronized WorkspaceState deleteTaskById(long taskId) {
         return deleteTask(taskId);
     }
 
     @Override
-    public synchronized WorkspaceState addProjectTaskDependency(long projectId, long taskId, TaskDependencyRequest request) {
-        requireProjectId(projectId);
-        return addTaskDependency(taskId, request);
-    }
-
-    @Override
     public synchronized WorkspaceState addTaskDependencyById(long taskId, TaskDependencyRequest request) {
         return addTaskDependency(taskId, request);
-    }
-
-    @Override
-    public synchronized WorkspaceState deleteProjectTaskDependency(long projectId, long taskId, String dependencyTitle) {
-        requireProjectId(projectId);
-        return deleteTaskDependency(taskId, dependencyTitle);
     }
 
     @Override
@@ -570,12 +527,6 @@ public class InMemoryWorkspaceService implements WorkspaceService {
         var activities = prependActivity(workspace.activities(), activity(workspace.user().name(), target.name() + " removed from team."));
         workspace = copy(workspace, workspace.tasks(), workspace.meetings(), activities, workspace.reports(), members, workspace.team());
         return recompute();
-    }
-
-    @Override
-    public synchronized WorkspaceState addProjectMember(long projectId, CreateMemberRequest request) {
-        requireProjectId(projectId);
-        return addMember(request);
     }
 
     @Override
