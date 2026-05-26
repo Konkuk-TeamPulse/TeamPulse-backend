@@ -231,32 +231,8 @@ public class JpaWorkspaceService implements WorkspaceService {
     }
 
     @Override
-    public WorkspaceState updateAccount(UpdateAccountRequest request) {
-        var workspace = requireInitializedWorkspace();
-        if (request.name() != null && !request.name().isBlank()) {
-            workspace.setUserName(request.name().trim());
-        }
-        if (request.email() != null && !request.email().isBlank()) {
-            workspace.setUserEmail(request.email().trim());
-        }
-        if (request.university() != null) {
-            workspace.setUserUniversity(request.university().trim());
-        }
-        if (request.phone() != null) {
-            workspace.setUserPhone(request.phone().trim());
-        }
-        workspace.getActivities().add(activity(workspace, workspace.getUserName(), "Account profile updated."));
-        return persistAndProject(workspace);
-    }
-
-    @Override
     public WorkspaceState updateTask(long taskId, UpdateTaskRequest request) {
         return updateTaskInWorkspace(requireInitializedWorkspace(), taskId, request);
-    }
-
-    @Override
-    public WorkspaceState updateProjectTask(long projectId, long taskId, UpdateTaskRequest request) {
-        return updateTaskInWorkspace(requireInitializedWorkspace(projectId), taskId, request);
     }
 
     @Override
@@ -304,11 +280,6 @@ public class JpaWorkspaceService implements WorkspaceService {
     }
 
     @Override
-    public WorkspaceState updateProjectTaskStatus(long projectId, long taskId, UpdateTaskStatusRequest request) {
-        return updateTaskStatusInWorkspace(requireInitializedWorkspace(projectId), taskId, request);
-    }
-
-    @Override
     public WorkspaceState updateTaskStatusById(long taskId, UpdateTaskStatusRequest request) {
         return updateTaskStatusInWorkspace(requireWorkspaceContainingTask(taskId), taskId, request);
     }
@@ -331,11 +302,6 @@ public class JpaWorkspaceService implements WorkspaceService {
     }
 
     @Override
-    public WorkspaceState deleteProjectTask(long projectId, long taskId) {
-        return deleteTaskInWorkspace(requireInitializedWorkspace(projectId), taskId);
-    }
-
-    @Override
     public WorkspaceState deleteTaskById(long taskId) {
         return deleteTaskInWorkspace(requireWorkspaceContainingTask(taskId), taskId);
     }
@@ -353,11 +319,6 @@ public class JpaWorkspaceService implements WorkspaceService {
     @Override
     public WorkspaceState addTaskDependency(long taskId, TaskDependencyRequest request) {
         return addTaskDependencyInWorkspace(requireInitializedWorkspace(), taskId, request);
-    }
-
-    @Override
-    public WorkspaceState addProjectTaskDependency(long projectId, long taskId, TaskDependencyRequest request) {
-        return addTaskDependencyInWorkspace(requireInitializedWorkspace(projectId), taskId, request);
     }
 
     @Override
@@ -382,11 +343,6 @@ public class JpaWorkspaceService implements WorkspaceService {
     @Override
     public WorkspaceState deleteTaskDependency(long taskId, String dependencyTitle) {
         return deleteTaskDependencyInWorkspace(requireInitializedWorkspace(), taskId, dependencyTitle);
-    }
-
-    @Override
-    public WorkspaceState deleteProjectTaskDependency(long projectId, long taskId, String dependencyTitle) {
-        return deleteTaskDependencyInWorkspace(requireInitializedWorkspace(projectId), taskId, dependencyTitle);
     }
 
     @Override
@@ -542,11 +498,6 @@ public class JpaWorkspaceService implements WorkspaceService {
     @Override
     public WorkspaceState addMember(CreateMemberRequest request) {
         return addMemberInWorkspace(requireInitializedWorkspace(), request);
-    }
-
-    @Override
-    public WorkspaceState addProjectMember(long projectId, CreateMemberRequest request) {
-        return addMemberInWorkspace(requireInitializedWorkspace(projectId), request);
     }
 
     private WorkspaceState addMemberInWorkspace(MobileWorkspaceEntity workspace, CreateMemberRequest request) {

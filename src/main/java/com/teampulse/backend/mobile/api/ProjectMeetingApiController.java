@@ -55,17 +55,6 @@ public class ProjectMeetingApiController {
     }
 
     // Deprecated: 프론트엔드는 회의 상세 조회 API GET /api/meetings/{meetingId} 를 사용합니다.
-    @Deprecated
-    @GetMapping("/{meetingId}")
-    public SpecResponse<MeetingSpecResponse> getMeeting(@PathVariable long projectId, @PathVariable long meetingId) {
-        var workspace = projectWorkspaceUseCase.getProjectWorkspace(projectId);
-        var meeting = workspace.meetings().stream()
-                .filter(candidate -> candidate.id() == meetingId)
-                .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("Meeting not found."));
-        return SpecResponse.ok(SUCCESS_MESSAGE, MeetingSpecResponse.from(meeting, workspace.user().name()));
-    }
-
     private MeetingView latestMeeting(WorkspaceState workspace) {
         return workspace.meetings().stream()
                 .max(Comparator.comparingLong(MeetingView::id))

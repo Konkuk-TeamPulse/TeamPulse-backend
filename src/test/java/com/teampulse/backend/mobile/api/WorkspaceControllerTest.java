@@ -16,6 +16,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.jayway.jsonpath.JsonPath;
 import com.lowagie.text.pdf.PdfReader;
 import com.lowagie.text.pdf.parser.PdfTextExtractor;
+import com.teampulse.backend.mobile.application.WorkspaceService;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -33,95 +35,57 @@ class WorkspaceControllerTest {
     @Autowired
     private MockMvc mockMvc;
 
-    @Test
-    void mobileWorkspaceEndpointIsAccessibleWithoutAuthentication() throws Exception {
-        mockMvc.perform(get("/api/mobile/workspace"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.success").value(true));
-    }
+    @Autowired
+    private WorkspaceService workspaceService;
 
-    @Test
-    void bootstrapRejectsInvalidDueDate() throws Exception {
-        mockMvc.perform(post("/api/mobile/workspace/bootstrap")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "name": "Kim",
-                                  "email": "kim@example.com",
-                                  "teamName": "TeamPulse",
-                                  "courseName": "AI Coding Tool",
-                                  "semester": "2026-1",
-                                  "dueDate": "2026-13-40"
-                                }
-                                """))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.success").value(false));
-    }
-
-    @Test
-    void createTaskRejectsUnknownOwner() throws Exception {
-        mockMvc.perform(post("/api/mobile/workspace/bootstrap")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "name": "Kim",
-                                  "email": "kim@example.com",
-                                  "teamName": "TeamPulse",
-                                  "courseName": "AI Coding Tool",
-                                  "semester": "2026-1",
-                                  "dueDate": "2026-04-12"
-                                }
-                                """))
-                .andExpect(status().isOk());
-
-        mockMvc.perform(post("/api/mobile/tasks")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "title": "Build backend",
-                                  "owner": "Min",
-                                  "dueDate": "2026-04-10",
-                                  "blockers": []
-                                }
-                                """))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.success").value(false))
-                .andExpect(jsonPath("$.error.code").value("INVALID_INPUT"));
+    @BeforeEach
+    void resetWorkspace() {
+        workspaceService.reset();
     }
 
     @Test
     void accountActivitiesAndRiskActionsExposeApiSpecRefinements() throws Exception {
-        mockMvc.perform(post("/api/mobile/workspace/sample"))
-                .andExpect(status().isOk());
         String accessToken = issueAccessToken("account-activities@example.com", "Lee Juho");
 
-        mockMvc.perform(patch("/api/account")
+        mockMvc.perform(post("/api/projects")
                         .header("Authorization", accessToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "name": "Lee Juho",
-                                  "email": "juho@example.com",
-                                  "university": "Konkuk University",
-                                  "phone": "010-1111-2222"
+                                  "projectName": "TeamPulse",
+                                  "subject": "AI Coding Tool",
+                                  "description": "Risk API test project",
+                                  "startDate": "2026-04-01",
+                                  "endDate": "2026-06-09"
                                 }
                                 """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.success").value(true))
-                .andExpect(jsonPath("$.data.email").value("juho@example.com"))
-                .andExpect(jsonPath("$.data.university").value("Konkuk University"))
-                .andExpect(jsonPath("$.data.phone").value("010-1111-2222"));
+                .andExpect(status().isOk());
 
-        mockMvc.perform(get("/api/projects/1/activities")
+        MvcResult membersResult = mockMvc.perform(get("/api/projects/1/members")
                         .header("Authorization", accessToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data[0].updatedAt").exists());
+                .andReturn();
+        Number assigneeId = JsonPath.read(membersResult.getResponse().getContentAsString(), "$.result[0].memberId");
 
-        mockMvc.perform(get("/api/account/activities")
+        mockMvc.perform(post("/api/projects/1/tasks")
+                        .header("Authorization", accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "title": "Overdue risk task",
+                                  "description": "Creates a risk signal",
+                                  "assigneeId": %d,
+                                  "dueDate": "2026-04-01"
+                                }
+                                """.formatted(assigneeId.longValue())))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/projects/1/activity-logs")
                         .header("Authorization", accessToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data[0].actor").value("Lee Juho"))
-                .andExpect(jsonPath("$.data[0].updatedAt").exists());
+                .andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.result[0].userName").value("Lee Juho"))
+                .andExpect(jsonPath("$.result[0].updatedAt").exists());
 
         mockMvc.perform(get("/api/projects/1/risks")
                         .header("Authorization", accessToken))
@@ -141,9 +105,6 @@ class WorkspaceControllerTest {
 
     @Test
     void projectApisUseNotionSpecRequestAndResponseShape() throws Exception {
-        mockMvc.perform(post("/api/mobile/workspace/reset"))
-                .andExpect(status().isOk());
-
         mockMvc.perform(get("/api/projects"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.isSuccess").value(false))
@@ -234,8 +195,6 @@ class WorkspaceControllerTest {
 
     @Test
     void accountDashboardActivityMembersAndLeaveUseSpecResponseShape() throws Exception {
-        mockMvc.perform(post("/api/mobile/workspace/reset"))
-                .andExpect(status().isOk());
         String accessToken = issueAccessToken("me-lookup@example.com", "Account Owner");
 
         mockMvc.perform(post("/api/projects")
@@ -309,8 +268,6 @@ class WorkspaceControllerTest {
 
     @Test
     void taskApisUseNotionSpecRequestAndResponseShape() throws Exception {
-        mockMvc.perform(post("/api/mobile/workspace/reset"))
-                .andExpect(status().isOk());
         String accessToken = issueAccessToken("task-owner@example.com", "Task Owner");
 
         mockMvc.perform(post("/api/projects")
@@ -522,8 +479,6 @@ class WorkspaceControllerTest {
 
     @Test
     void meetingApisUseSpecResponseShape() throws Exception {
-        mockMvc.perform(post("/api/mobile/workspace/reset"))
-                .andExpect(status().isOk());
         String accessToken = issueAccessToken("meeting-detail@example.com", "Meeting Owner");
 
         mockMvc.perform(post("/api/projects")
@@ -591,17 +546,6 @@ class WorkspaceControllerTest {
                 .andExpect(jsonPath("$.result[0].actionItems[0].assigneeId").value(memberId.longValue()))
                 .andExpect(jsonPath("$.result[0].actionItems[0].dueDate").value("2026-04-30"));
 
-        mockMvc.perform(get("/api/projects/1/meetings/{meetingId}", meetingId.longValue())
-                        .header("Authorization", accessToken))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.isSuccess").value(true))
-                .andExpect(jsonPath("$.responseCode").value(1000))
-                .andExpect(jsonPath("$.result.meetingId").value(meetingId.longValue()))
-                .andExpect(jsonPath("$.result.actions[0]").value("Implement meeting APIs"))
-                .andExpect(jsonPath("$.result.content").value("Discuss remaining in-progress APIs"))
-                .andExpect(jsonPath("$.result.attendeeIds[0]").value(memberId.longValue()))
-                .andExpect(jsonPath("$.result.actionItems[0].assigneeId").value(memberId.longValue()));
-
         mockMvc.perform(get("/api/meetings/{meetingId}", meetingId.longValue())
                         .header("Authorization", accessToken))
                 .andExpect(status().isOk())
@@ -620,9 +564,6 @@ class WorkspaceControllerTest {
 
     @Test
     void invitationApisUseNotionPathsAndSpecResponseShape() throws Exception {
-        mockMvc.perform(post("/api/mobile/workspace/reset"))
-                .andExpect(status().isOk());
-
         String leaderToken = issueAccessToken("invitation-leader@example.com", "Invitation Leader");
 
         mockMvc.perform(post("/api/projects")
@@ -640,11 +581,6 @@ class WorkspaceControllerTest {
                 .andExpect(status().isOk());
 
         mockMvc.perform(post("/api/projects/1/invitations"))
-                .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.isSuccess").value(false))
-                .andExpect(jsonPath("$.responseCode").value(3001));
-
-        mockMvc.perform(post("/api/projects/1/invite-links"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.isSuccess").value(false))
                 .andExpect(jsonPath("$.responseCode").value(3001));
@@ -693,16 +629,6 @@ class WorkspaceControllerTest {
                 .andExpect(jsonPath("$.result.projectName").value("Invitation Project"))
                 .andExpect(jsonPath("$.result.role").value("MEMBER"));
 
-        MvcResult legacyInviteResult = mockMvc.perform(post("/api/projects/1/invite-links")
-                        .header("Authorization", leaderToken))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.success").value(true))
-                .andExpect(jsonPath("$.data.inviteCode").isString())
-                .andExpect(jsonPath("$.data.url", startsWith("https://team-pulse-frontend.vercel.app/invite/")))
-                .andExpect(jsonPath("$.data.inviteUrl", startsWith("https://team-pulse-frontend.vercel.app/invite/")))
-                .andReturn();
-        assertThat((String) JsonPath.read(legacyInviteResult.getResponse().getContentAsString(), "$.data.inviteUrl"))
-                .isEqualTo(JsonPath.read(legacyInviteResult.getResponse().getContentAsString(), "$.data.url"));
     }
 
     @Test
@@ -714,8 +640,6 @@ class WorkspaceControllerTest {
 
     @Test
     void reportApisUseNotionPathsAndPdfDownload() throws Exception {
-        mockMvc.perform(post("/api/mobile/workspace/reset"))
-                .andExpect(status().isOk());
         String accessToken = issueAccessToken("report-download@example.com", "Report Owner");
 
         mockMvc.perform(post("/api/projects")
@@ -776,15 +700,6 @@ class WorkspaceControllerTest {
                 .andExpect(jsonPath("$.result.downloadUrl").isString())
                 .andReturn();
         String downloadUrl = JsonPath.read(reportResult.getResponse().getContentAsString(), "$.result.downloadUrl");
-        Number reportId = JsonPath.read(reportResult.getResponse().getContentAsString(), "$.result.reportId");
-
-        mockMvc.perform(get("/api/projects/1/reports")
-                        .header("Authorization", accessToken))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.isSuccess").value(true))
-                .andExpect(jsonPath("$.result[0].id").value(reportId.longValue()))
-                .andExpect(jsonPath("$.result[0].status").value("READY"));
-
         MvcResult downloadResult = mockMvc.perform(get(downloadUrl)
                         .header("Authorization", accessToken))
                 .andExpect(status().isOk())
