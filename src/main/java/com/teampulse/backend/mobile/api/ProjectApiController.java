@@ -25,7 +25,6 @@ import com.teampulse.backend.mobile.dto.ProjectUpdateResponse;
 import com.teampulse.backend.mobile.dto.ReportCreateRequest;
 import com.teampulse.backend.mobile.dto.ReportCreateResponse;
 import com.teampulse.backend.mobile.dto.ReportView;
-import com.teampulse.backend.mobile.dto.RiskActionOption;
 import com.teampulse.backend.mobile.dto.RiskView;
 import com.teampulse.backend.mobile.dto.TaskView;
 import com.teampulse.backend.mobile.dto.TeamProfile;
@@ -56,7 +55,6 @@ import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
@@ -221,17 +219,6 @@ public class ProjectApiController {
     @GetMapping("/projects/{projectId}/risks")
     public ApiResponse<List<RiskView>> listRisks(@PathVariable long projectId) {
         return ApiResponse.ok(projectWorkspaceUseCase.getProjectWorkspace(projectId).risks());
-    }
-
-    // 리스크 목록에서 선택한 항목에 대해 프론트가 바로 표시할 수 있는 대응 옵션을 제공합니다.
-    @GetMapping("/projects/{projectId}/risks/{riskId}/actions")
-    public ApiResponse<List<RiskActionOption>> listRiskActions(@PathVariable long projectId, @PathVariable long riskId) {
-        var workspace = projectWorkspaceUseCase.getProjectWorkspace(projectId);
-        var risk = workspace.risks().stream()
-                .filter(candidate -> candidate.id() == riskId)
-                .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("Risk not found."));
-        return ApiResponse.ok(riskActions(risk, workspace));
     }
 
     @PostMapping("/projects/{projectId}/reports")
@@ -938,95 +925,6 @@ public class ProjectApiController {
         return value == null || value.isBlank() ? "-" : value.trim();
     }
 
-    private List<RiskActionOption> riskActions(RiskView risk, WorkspaceState workspace) {
-        var affectedTask = firstAffectedTask(risk, workspace.tasks());
-        var dueTask = affectedTask == null ? firstOpenTaskByDueDate(workspace.tasks()) : affectedTask;
-        var reassignmentTarget = affectedTask == null ? firstOpenTaskByOwnerLoad(workspace.tasks()) : affectedTask;
-        var leastLoadedOwner = leastLoadedOwner(workspace);
-
-        return switch ((int) risk.id()) {
-            case 101, 102 -> deadlineRiskActions(dueTask, leastLoadedOwner);
-            case 103 -> blockedRiskActions(dueTask);
-            case 104 -> concentrationRiskActions(reassignmentTarget, leastLoadedOwner);
-            case 105 -> meetingRiskActions();
-            default -> reviewRiskActions();
-        };
-    }
-
-    private List<RiskActionOption> deadlineRiskActions(TaskView dueTask, String leastLoadedOwner) {
-        return List.of(
-                new RiskActionOption(
-                        "RESCHEDULE",
-                        "일정 재조정",
-                        "지연되었거나 마감이 임박한 작업의 마감일을 현실적인 날짜로 조정합니다.",
-                        dueTask == null ? null : dueTask.id(),
-                        null,
-                        dueTask == null ? null : suggestedDueDate(dueTask.dueDate(), 2)),
-                new RiskActionOption(
-                        "REASSIGN",
-                        "작업 재할당",
-                        "마감 위험이 있는 작업을 현재 업무량이 더 낮은 팀원에게 재배치합니다.",
-                        dueTask == null ? null : dueTask.id(),
-                        leastLoadedOwner,
-                        null));
-    }
-
-    private List<RiskActionOption> blockedRiskActions(TaskView dueTask) {
-        return List.of(
-                new RiskActionOption(
-                        "UNBLOCK",
-                        "선행 작업 정리",
-                        "막힌 작업의 선행 작업을 먼저 처리하도록 우선순위를 조정합니다.",
-                        dueTask == null ? null : dueTask.id(),
-                        null,
-                        null),
-                new RiskActionOption(
-                        "SPLIT_TASK",
-                        "작업 분할",
-                        "큰 작업을 더 작은 실행 단위로 나눠 병렬 진행 가능성을 높입니다.",
-                        dueTask == null ? null : dueTask.id(),
-                        null,
-                        null));
-    }
-
-    private List<RiskActionOption> concentrationRiskActions(TaskView reassignmentTarget, String leastLoadedOwner) {
-        return List.of(
-                new RiskActionOption(
-                        "REASSIGN",
-                        "작업 재할당",
-                        "특정 담당자에게 몰린 작업 일부를 다른 팀원에게 넘깁니다.",
-                        reassignmentTarget == null ? null : reassignmentTarget.id(),
-                        leastLoadedOwner,
-                        null),
-                new RiskActionOption(
-                        "RESCHEDULE",
-                        "일정 재조정",
-                        "담당자 과부하가 큰 작업의 마감일을 조정합니다.",
-                        reassignmentTarget == null ? null : reassignmentTarget.id(),
-                        null,
-                        reassignmentTarget == null ? null : suggestedDueDate(reassignmentTarget.dueDate(), 2)));
-    }
-
-    private List<RiskActionOption> meetingRiskActions() {
-        return List.of(new RiskActionOption(
-                "SCHEDULE_MEETING",
-                "회의 일정 등록",
-                "누락된 회의록을 보완하기 위해 동기화 회의를 등록합니다.",
-                null,
-                null,
-                LocalDate.now().plusDays(1).toString()));
-    }
-
-    private List<RiskActionOption> reviewRiskActions() {
-        return List.of(new RiskActionOption(
-                "REVIEW",
-                "리스크 검토",
-                "담당자가 리스크 상태를 확인하고 필요한 대응을 선택합니다.",
-                null,
-                null,
-                null));
-    }
-
     private TaskView firstAffectedTask(RiskView risk, List<TaskView> tasks) {
         for (var affectedTaskId : risk.affectedTaskIds()) {
             for (var task : tasks) {
@@ -1046,53 +944,6 @@ public class ProjectApiController {
                 .filter(member -> member.name().equalsIgnoreCase(name))
                 .findFirst()
                 .orElse(null);
-    }
-
-    private TaskView firstOpenTaskByDueDate(List<TaskView> tasks) {
-        return tasks.stream()
-                .filter(task -> task.status() != TaskStatus.DONE)
-                .min(Comparator.comparing(task -> parseDateOrMax(task.dueDate())))
-                .orElse(null);
-    }
-
-    private TaskView firstOpenTaskByOwnerLoad(List<TaskView> tasks) {
-        var busiestOwner = tasks.stream()
-                .filter(task -> task.status() != TaskStatus.DONE)
-                .collect(java.util.stream.Collectors.groupingBy(TaskView::owner, java.util.stream.Collectors.counting()))
-                .entrySet()
-                .stream()
-                .max(Comparator.comparingLong(entry -> entry.getValue()))
-                .map(Map.Entry::getKey)
-                .orElse(null);
-        if (busiestOwner == null) {
-            return null;
-        }
-        return tasks.stream()
-                .filter(task -> task.status() != TaskStatus.DONE)
-                .filter(task -> task.owner().equals(busiestOwner))
-                .findFirst()
-                .orElse(null);
-    }
-
-    private String leastLoadedOwner(WorkspaceState workspace) {
-        if (workspace.members().isEmpty()) {
-            return null;
-        }
-        var openTaskCounts = workspace.tasks().stream()
-                .filter(task -> task.status() != TaskStatus.DONE)
-                .collect(java.util.stream.Collectors.groupingBy(TaskView::owner, java.util.stream.Collectors.counting()));
-        return workspace.members().stream()
-                .min(Comparator.comparingLong(member -> openTaskCounts.getOrDefault(member.name(), 0L)))
-                .map(member -> member.name())
-                .orElse(null);
-    }
-
-    private String suggestedDueDate(String dueDate, int plusDays) {
-        var parsed = parseDateOrMax(dueDate);
-        if (parsed.equals(LocalDate.MAX)) {
-            parsed = LocalDate.now();
-        }
-        return parsed.plusDays(plusDays).toString();
     }
 
     private LocalDate parseDateOrMax(String value) {

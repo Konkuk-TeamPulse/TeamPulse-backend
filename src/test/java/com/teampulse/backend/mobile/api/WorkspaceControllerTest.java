@@ -44,7 +44,7 @@ class WorkspaceControllerTest {
     }
 
     @Test
-    void accountActivitiesAndRiskActionsExposeApiSpecRefinements() throws Exception {
+    void accountActivitiesExposeApiSpecRefinements() throws Exception {
         String accessToken = issueAccessToken("account-activities@example.com", "Lee Juho");
 
         mockMvc.perform(post("/api/projects")
@@ -95,12 +95,6 @@ class WorkspaceControllerTest {
                 .andExpect(jsonPath("$.data[0].affectedTaskIds").isArray())
                 .andExpect(jsonPath("$.data[0].suggestedActions").isArray());
 
-        mockMvc.perform(get("/api/projects/1/risks/101/actions")
-                        .header("Authorization", accessToken))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data[0].type").value("RESCHEDULE"))
-                .andExpect(jsonPath("$.data[0].label").value("일정 재조정"))
-                .andExpect(jsonPath("$.data[0].description").value("지연되었거나 마감이 임박한 작업의 마감일을 현실적인 날짜로 조정합니다."));
     }
 
     @Test
@@ -375,13 +369,6 @@ class WorkspaceControllerTest {
                 .andExpect(jsonPath("$.result.risks[0].type").value("PROGRESS_STALLED"))
                 .andExpect(jsonPath("$.result.risks[0].relatedTaskId").value(precedingTaskId.longValue()))
                 .andExpect(jsonPath("$.result.risks[0].relatedMemberName").value("Task Owner"));
-
-        mockMvc.perform(get("/api/projects/1/risks/999/actions")
-                        .header("Authorization", accessToken))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.isSuccess").value(false))
-                .andExpect(jsonPath("$.responseCode").value(4007))
-                .andExpect(jsonPath("$.responseMessage").value("리스크를 찾을 수 없습니다."));
 
         mockMvc.perform(post("/api/tasks/{taskId}/dependencies", precedingTaskId.longValue())
                         .header("Authorization", accessToken)

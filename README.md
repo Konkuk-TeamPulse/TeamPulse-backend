@@ -116,7 +116,7 @@ JUnit/MockMvc 테스트가 모두 통과해야 PR을 merge한다. 최근 검증 
 - 회의록: `POST/GET /api/projects/{id}/meetings`, `GET /api/projects/{id}/meetings/{meetingId}`
 - 초대: `POST /api/projects/{id}/invitations`, `GET/POST /api/invitations/{code}`
 - 리포트: `POST /api/projects/{id}/reports`, `GET /api/reports/{id}/download`
-- 리스크: `GET /api/projects/{id}/risks`, `/risks/{riskId}/actions`
+- 리스크: `GET /api/projects/{id}/risks`
 - 헬스: `GET /api/health`
 
 ## 디렉터리 구조

@@ -49,7 +49,6 @@
 ### 공개 유지 API
 
 - `/api/health`
-- `/api/roadmap`
 - `/api/auth/signup`
 - `/api/auth/login`
 - `GET /api/invitations/{inviteCode}`

@@ -258,7 +258,6 @@
   - `POST /api/invitations/{inviteCode}/accept`
 - 공개 API
   - `GET /api/health`
-  - `GET /api/roadmap`
   - `POST /api/auth/signup`
   - `POST /api/auth/login`
   - `GET /api/invitations/{inviteCode}`
