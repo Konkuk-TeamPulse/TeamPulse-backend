@@ -131,43 +131,6 @@ MVP behavior:
 - 현재 workspace user name과 actor가 같은 활동만 반환한다.
 - 실제 JWT/userId 기반 필터링은 후속 인증 고도화에서 처리한다.
 
-### FR-035/FR-036 리스크 대응 옵션 목록
-
-리스크별 대응 옵션 목록 API를 추가했다.
-
-```text
-GET /api/projects/{projectId}/risks/{riskId}/actions
-```
-
-Response example:
-
-```json
-[
-  {
-    "type": "RESCHEDULE",
-    "label": "일정 재조정",
-    "description": "지연 또는 임박한 태스크의 마감일을 뒤로 조정합니다.",
-    "targetTaskId": 1002,
-    "suggestedOwner": null,
-    "suggestedDueDate": "2026-04-11"
-  },
-  {
-    "type": "REASSIGN",
-    "label": "작업 재할당",
-    "description": "마감 위험이 있는 태스크를 작업량이 적은 팀원에게 재배정합니다.",
-    "targetTaskId": 1002,
-    "suggestedOwner": "Min",
-    "suggestedDueDate": null
-  }
-]
-```
-
-MVP behavior:
-
-- 현재 감지된 risk id 기준으로 대응 옵션을 반환한다.
-- 일정 재조정, 작업 재할당, 선행 작업 정리, 작업 분할, 회의 등록 옵션을 제공한다.
-- 대응 옵션 실행 API는 아직 추가하지 않았다.
-
 ## 검증
 
 ```powershell
@@ -209,7 +172,6 @@ PATCH /api/account
 GET   /api/projects/1/activities
 GET   /api/account/activities
 GET   /api/projects/1/risks
-GET   /api/projects/1/risks/101/actions
 ```
 
 Observed result:
