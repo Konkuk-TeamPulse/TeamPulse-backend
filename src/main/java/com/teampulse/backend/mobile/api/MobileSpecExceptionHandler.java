@@ -1,6 +1,7 @@
 package com.teampulse.backend.mobile.api;
 
 import com.teampulse.backend.common.api.SpecResponse;
+import com.teampulse.backend.project.api.ProjectMemberApiController;
 import java.util.List;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
         ProjectMeetingApiController.class,
         MeetingApiController.class,
         InvitationApiController.class,
+        ProjectMemberApiController.class,
         ProjectTaskApiController.class,
         TaskApiController.class
 })

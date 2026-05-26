@@ -617,7 +617,7 @@ class WorkspaceControllerTest {
 
         String accessToken = issueAccessToken("invitation-accept@example.com");
 
-        mockMvc.perform(post("/api/invitations/{inviteCode}/accept", inviteCode)
+        MvcResult acceptResult = mockMvc.perform(post("/api/invitations/{inviteCode}/accept", inviteCode)
                         .header("Authorization", accessToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
@@ -627,7 +627,31 @@ class WorkspaceControllerTest {
                 .andExpect(jsonPath("$.result.memberId").isNumber())
                 .andExpect(jsonPath("$.result.projectId").value(1))
                 .andExpect(jsonPath("$.result.projectName").value("Invitation Project"))
-                .andExpect(jsonPath("$.result.role").value("MEMBER"));
+                .andExpect(jsonPath("$.result.role").value("MEMBER"))
+                .andReturn();
+        Number invitedMemberId = JsonPath.read(acceptResult.getResponse().getContentAsString(), "$.result.memberId");
+
+        mockMvc.perform(get("/api/projects/1/members")
+                        .header("Authorization", leaderToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.length()").value(2));
+
+        mockMvc.perform(delete("/api/projects/1/members/{memberId}", invitedMemberId.longValue()))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.isSuccess").value(false))
+                .andExpect(jsonPath("$.responseCode").value(3001));
+
+        mockMvc.perform(delete("/api/projects/1/members/{memberId}", invitedMemberId.longValue())
+                        .header("Authorization", leaderToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.responseCode").value(1000))
+                .andExpect(jsonPath("$.result").doesNotExist());
+
+        mockMvc.perform(get("/api/projects/1/members")
+                        .header("Authorization", leaderToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.length()").value(1));
 
     }
 
