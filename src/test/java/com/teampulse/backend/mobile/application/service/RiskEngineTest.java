@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.teampulse.backend.domain.risk.RiskSeverity;
 import com.teampulse.backend.domain.task.TaskStatus;
 import com.teampulse.backend.domain.team.TeamRole;
+import com.teampulse.backend.mobile.dto.MeetingView;
 import com.teampulse.backend.mobile.dto.MemberView;
 import com.teampulse.backend.mobile.dto.RiskView;
 import com.teampulse.backend.mobile.dto.TaskView;
@@ -60,8 +61,78 @@ class RiskEngineTest {
         assertThat(risks).isEmpty();
     }
 
+    @Test
+    void dueSoonTasksWithoutOverdueCreateWarningDeadlineRiskAndIgnoreInvalidDates() {
+        var risks = riskEngine.deriveRisks(List.of(
+                task(1, "Today", "Lee", TaskStatus.TODO, "2026-04-24", List.of(), List.of()),
+                task(2, "Soon", "Park", TaskStatus.DOING, "2026-04-26", List.of(), List.of()),
+                task(3, "Bad date", "Kim", TaskStatus.TODO, "not-a-date", List.of(), List.of())
+        ), List.of(meeting()), List.of(
+                new MemberView(1, "Lee", TeamRole.LEADER),
+                new MemberView(2, "Park", TeamRole.MEMBER)
+        ));
+
+        assertThat(risks).extracting(RiskView::id).contains(101L, 102L);
+        assertThat(riskById(risks, 102).severity()).isEqualTo(RiskSeverity.WARNING);
+        assertThat(riskById(risks, 102).affectedTaskIds()).containsExactly(1L, 2L);
+    }
+
+    @Test
+    void riskEngineIgnoresBlankMissingAndMalformedDatesWhenNoOtherSignalsExist() {
+        var risks = riskEngine.deriveRisks(List.of(
+                task(1, "No due date", null, TaskStatus.TODO, null, List.of(), List.of()),
+                task(2, "Blank due date", " ", TaskStatus.DOING, " ", List.of(), List.of()),
+                task(3, "Malformed due date", "", TaskStatus.TODO, "2026-99-99", List.of(), List.of())
+        ), List.of(meeting()), List.of(
+                new MemberView(1, "Lee", TeamRole.LEADER),
+                new MemberView(2, "Park", TeamRole.MEMBER)
+        ));
+
+        assertThat(risks).isEmpty();
+    }
+
+    @Test
+    void ownerConcentrationRequiresEnoughTasksAndMeaningfulRatio() {
+        var lessThanThree = riskEngine.deriveRisks(List.of(
+                task(1, "A", "Lee", TaskStatus.TODO, "2026-05-10", List.of(), List.of()),
+                task(2, "B", "Lee", TaskStatus.DOING, "2026-05-11", List.of(), List.of())
+        ), List.of(meeting()), List.of(
+                new MemberView(1, "Lee", TeamRole.LEADER),
+                new MemberView(2, "Park", TeamRole.MEMBER)
+        ));
+        var belowRatio = riskEngine.deriveRisks(List.of(
+                task(1, "A", "Lee", TaskStatus.TODO, "2026-05-10", List.of(), List.of()),
+                task(2, "B", "Park", TaskStatus.DOING, "2026-05-11", List.of(), List.of()),
+                task(3, "C", "Kim", TaskStatus.TODO, "2026-05-12", List.of(), List.of())
+        ), List.of(meeting()), List.of(
+                new MemberView(1, "Lee", TeamRole.LEADER),
+                new MemberView(2, "Park", TeamRole.MEMBER)
+        ));
+
+        assertThat(lessThanThree).extracting(RiskView::id).doesNotContain(104L);
+        assertThat(belowRatio).extracting(RiskView::id).doesNotContain(104L);
+    }
+
+    @Test
+    void nextTaskRelationshipCreatesBlockedRiskEvenWithoutBlockers() {
+        var risks = riskEngine.deriveRisks(List.of(
+                task(1, "Preceding", "Lee", TaskStatus.DOING, "2026-05-10", List.of(), List.of("Follow-up")),
+                task(2, "Follow-up", "Park", TaskStatus.TODO, "2026-05-11", List.of(), List.of())
+        ), List.of(meeting()), List.of(
+                new MemberView(1, "Lee", TeamRole.LEADER),
+                new MemberView(2, "Park", TeamRole.MEMBER)
+        ));
+
+        assertThat(risks).extracting(RiskView::id).contains(103L);
+        assertThat(riskById(risks, 103).affectedTaskIds()).containsExactly(1L);
+    }
+
     private TaskView task(long id, String title, String owner, TaskStatus status, String dueDate, List<String> blockers, List<String> next) {
         return new TaskView(id, title, owner, status, dueDate, "MEDIUM", blockers, next, "");
+    }
+
+    private MeetingView meeting() {
+        return new MeetingView(1, "Weekly", "2026-04-24", "Sync", List.of(), List.of());
     }
 
     private RiskView riskById(List<RiskView> risks, long id) {
