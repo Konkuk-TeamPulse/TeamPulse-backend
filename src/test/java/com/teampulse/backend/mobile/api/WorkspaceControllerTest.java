@@ -607,7 +607,11 @@ class WorkspaceControllerTest {
         MvcResult acceptResult = mockMvc.perform(post("/api/invitations/{inviteCode}/accept", inviteCode)
                         .header("Authorization", accessToken)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{}"))
+                        .content("""
+                                {
+                                  "role": "LEADER"
+                                }
+                                """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.isSuccess").value(true))
                 .andExpect(jsonPath("$.responseCode").value(1000))
@@ -627,6 +631,13 @@ class WorkspaceControllerTest {
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.isSuccess").value(false))
                 .andExpect(jsonPath("$.responseCode").value(3001));
+
+        mockMvc.perform(delete("/api/projects/1/members/{memberId}", invitedMemberId.longValue())
+                        .header("Authorization", accessToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.isSuccess").value(false))
+                .andExpect(jsonPath("$.responseCode").value(3003))
+                .andExpect(jsonPath("$.responseMessage").value("권한이 없습니다."));
 
         mockMvc.perform(delete("/api/projects/1/members/{memberId}", invitedMemberId.longValue())
                         .header("Authorization", leaderToken))

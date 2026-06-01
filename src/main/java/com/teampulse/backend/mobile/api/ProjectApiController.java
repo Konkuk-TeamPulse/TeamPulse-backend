@@ -6,7 +6,6 @@ import com.teampulse.backend.auth.domain.AuthUser;
 import com.teampulse.backend.domain.task.TaskStatus;
 import com.teampulse.backend.domain.team.TeamRole;
 import com.teampulse.backend.mobile.application.ProjectWorkspaceUseCase;
-import com.teampulse.backend.mobile.application.WorkspaceQueryUseCase;
 import com.teampulse.backend.mobile.dto.ActivityView;
 import com.teampulse.backend.mobile.dto.ActivityLogSpecResponse;
 import com.teampulse.backend.mobile.dto.BootstrapWorkspaceRequest;
@@ -59,6 +58,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -90,24 +90,20 @@ public class ProjectApiController {
     private static final Color REPORT_WARNING = new Color(180, 83, 9);
     private static final Color REPORT_DANGER = new Color(185, 28, 28);
 
-    private final WorkspaceQueryUseCase workspaceQueryUseCase;
     private final ProjectWorkspaceUseCase projectWorkspaceUseCase;
     private final String frontendPublicBaseUrl;
 
     public ProjectApiController(
-            WorkspaceQueryUseCase workspaceQueryUseCase,
             ProjectWorkspaceUseCase projectWorkspaceUseCase,
             @Value("${app.frontend.public-base-url:" + DEFAULT_FRONTEND_PUBLIC_BASE_URL + "}") String frontendPublicBaseUrl
     ) {
-        this.workspaceQueryUseCase = workspaceQueryUseCase;
         this.projectWorkspaceUseCase = projectWorkspaceUseCase;
         this.frontendPublicBaseUrl = normalizeBaseUrl(frontendPublicBaseUrl);
     }
 
     @GetMapping("/users/me")
     public SpecResponse<UserMeResponse> getCurrentUser(Authentication authentication) {
-        var workspace = workspaceQueryUseCase.getWorkspace();
-        return SpecResponse.ok(SUCCESS_MESSAGE, userMe(workspace, authentication));
+        return SpecResponse.ok(SUCCESS_MESSAGE, userMe(requireAuthUser(authentication)));
     }
 
     @PostMapping("/projects")
@@ -262,47 +258,38 @@ public class ProjectApiController {
     }
 
     private TeamRole projectRole(WorkspaceState workspace, Authentication authentication) {
-        if (authentication != null && authentication.getPrincipal() instanceof AuthUser authUser) {
-            if (workspace.user().email().equalsIgnoreCase(authUser.email())) {
-                return TeamRole.LEADER;
-            }
-            return workspace.members().stream()
-                    .filter(member -> member.email().equalsIgnoreCase(authUser.email())
-                            || member.name().equalsIgnoreCase(authUser.name()))
-                    .map(MemberView::role)
-                    .findFirst()
-                    .orElse(TeamRole.MEMBER);
+        var authUser = requireAuthUser(authentication);
+        if (workspace.user().email().equalsIgnoreCase(authUser.email())) {
+            return TeamRole.LEADER;
         }
-        return TeamRole.LEADER;
+        return workspace.members().stream()
+                .filter(member -> member.email().equalsIgnoreCase(authUser.email())
+                        || member.name().equalsIgnoreCase(authUser.name()))
+                .map(MemberView::role)
+                .findFirst()
+                .orElse(TeamRole.MEMBER);
     }
 
-    private UserMeResponse userMe(WorkspaceState workspace, Authentication authentication) {
-        if (authentication != null && authentication.getPrincipal() instanceof AuthUser authUser) {
-            return new UserMeResponse(
-                    authUser.id(),
-                    authUser.email(),
-                    authUser.email(),
-                    authUser.name(),
-                    authUser.university(),
-                    authUser.phone());
-        }
-        var leader = workspace.members().stream()
-                .filter(member -> member.name().equalsIgnoreCase(workspace.user().name()))
-                .findFirst();
+    private UserMeResponse userMe(AuthUser authUser) {
         return new UserMeResponse(
-                leader.map(MemberView::id).orElse(workspace.projectId()),
-                workspace.user().email(),
-                workspace.user().email(),
-                workspace.user().name(),
-                workspace.user().university(),
-                workspace.user().phone());
+                authUser.id(),
+                authUser.email(),
+                authUser.email(),
+                authUser.name(),
+                authUser.university(),
+                authUser.phone());
     }
 
     private UserProfile currentUser(Authentication authentication) {
+        var authUser = requireAuthUser(authentication);
+        return new UserProfile(authUser.name(), authUser.email(), authUser.university(), authUser.phone());
+    }
+
+    private AuthUser requireAuthUser(Authentication authentication) {
         if (authentication != null && authentication.getPrincipal() instanceof AuthUser authUser) {
-            return new UserProfile(authUser.name(), authUser.email(), authUser.university(), authUser.phone());
+            return authUser;
         }
-        return workspaceQueryUseCase.getWorkspace().user();
+        throw new AccessDeniedException("Authentication user is required.");
     }
 
     private DashboardResponse dashboard(WorkspaceState workspace) {

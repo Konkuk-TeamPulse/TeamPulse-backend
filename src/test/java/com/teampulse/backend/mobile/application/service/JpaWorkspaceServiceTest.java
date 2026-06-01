@@ -479,7 +479,7 @@ class JpaWorkspaceServiceTest {
                 .singleElement()
                 .satisfies(member -> {
                     assertThat(member.email()).isEqualTo("legacy@example.com");
-                    assertThat(member.role()).isEqualTo(TeamRole.LEADER);
+                    assertThat(member.role()).isEqualTo(TeamRole.MEMBER);
                 });
 
         var joined = service.acceptInvitation("ABC123", " Newbie ", "Newbie@Example.com", null);
