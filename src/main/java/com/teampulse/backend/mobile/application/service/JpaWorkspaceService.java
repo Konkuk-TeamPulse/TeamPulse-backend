@@ -485,12 +485,12 @@ public class JpaWorkspaceService implements WorkspaceService {
                 .findFirst();
         if (legacyMember.isPresent()) {
             legacyMember.get().setEmail(normalizedEmail);
-            legacyMember.get().setRole(role == null ? TeamRole.MEMBER : role);
+            legacyMember.get().setRole(invitationMemberRole(role));
             workspace.getActivities().add(activity(workspace, workspace.getUserName(), normalizedName + " accepted invitation."));
             return persistAndProject(workspace);
         }
 
-        workspace.getMembers().add(member(workspace, normalizedName, normalizedEmail, role == null ? TeamRole.MEMBER : role));
+        workspace.getMembers().add(member(workspace, normalizedName, normalizedEmail, invitationMemberRole(role)));
         workspace.getActivities().add(activity(workspace, workspace.getUserName(), normalizedName + " accepted invitation."));
         return persistAndProject(workspace);
     }
@@ -1045,6 +1045,10 @@ public class JpaWorkspaceService implements WorkspaceService {
             builder.append(alphabet.charAt(ThreadLocalRandom.current().nextInt(alphabet.length())));
         }
         return builder.toString();
+    }
+
+    private TeamRole invitationMemberRole(TeamRole ignoredRequestedRole) {
+        return TeamRole.MEMBER;
     }
 
 }

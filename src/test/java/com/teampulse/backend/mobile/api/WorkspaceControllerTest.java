@@ -607,7 +607,11 @@ class WorkspaceControllerTest {
         MvcResult acceptResult = mockMvc.perform(post("/api/invitations/{inviteCode}/accept", inviteCode)
                         .header("Authorization", accessToken)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{}"))
+                        .content("""
+                                {
+                                  "role": "LEADER"
+                                }
+                                """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.isSuccess").value(true))
                 .andExpect(jsonPath("$.responseCode").value(1000))
@@ -627,6 +631,13 @@ class WorkspaceControllerTest {
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.isSuccess").value(false))
                 .andExpect(jsonPath("$.responseCode").value(3001));
+
+        mockMvc.perform(delete("/api/projects/1/members/{memberId}", invitedMemberId.longValue())
+                        .header("Authorization", accessToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.isSuccess").value(false))
+                .andExpect(jsonPath("$.responseCode").value(3003))
+                .andExpect(jsonPath("$.responseMessage").value("권한이 없습니다."));
 
         mockMvc.perform(delete("/api/projects/1/members/{memberId}", invitedMemberId.longValue())
                         .header("Authorization", leaderToken))
@@ -733,6 +744,151 @@ class WorkspaceControllerTest {
                 .contains("고급 프로젝트")
                 .contains("주간 회의")
                 .doesNotContain("???");
+    }
+
+    @Test
+    void reportPdfIncludesTasksDependenciesMeetingActionsAndRisks() throws Exception {
+        String accessToken = issueAccessToken("rich-report@example.com", "Rich Report Owner");
+
+        mockMvc.perform(post("/api/projects")
+                        .header("Authorization", accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "projectName": "Rich Report Project",
+                                  "subject": "Integration Testing",
+                                  "description": "Report branch coverage project",
+                                  "startDate": "2026-04-01",
+                                  "endDate": "2026-06-09"
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        MvcResult membersResult = mockMvc.perform(get("/api/projects/1/members")
+                        .header("Authorization", accessToken))
+                .andExpect(status().isOk())
+                .andReturn();
+        Number assigneeId = JsonPath.read(membersResult.getResponse().getContentAsString(), "$.result[0].memberId");
+
+        mockMvc.perform(post("/api/projects/1/reports")
+                        .header("Authorization", accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "reportType": "HTML"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.isSuccess").value(false));
+
+        MvcResult architectureTaskResult = mockMvc.perform(post("/api/projects/1/tasks")
+                        .header("Authorization", accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "title": "Architecture Review",
+                                  "description": "Capture the design decision",
+                                  "assigneeId": %d,
+                                  "dueDate": "2026-04-20"
+                                }
+                                """.formatted(assigneeId.longValue())))
+                .andExpect(status().isOk())
+                .andReturn();
+        Number architectureTaskId = JsonPath.read(architectureTaskResult.getResponse().getContentAsString(), "$.result.taskId");
+
+        MvcResult contractTaskResult = mockMvc.perform(post("/api/projects/1/tasks")
+                        .header("Authorization", accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "title": "Frontend Contract",
+                                  "description": "Align API response fields",
+                                  "assigneeId": %d,
+                                  "dueDate": "2026-04-21"
+                                }
+                                """.formatted(assigneeId.longValue())))
+                .andExpect(status().isOk())
+                .andReturn();
+        Number contractTaskId = JsonPath.read(contractTaskResult.getResponse().getContentAsString(), "$.result.taskId");
+
+        mockMvc.perform(post("/api/tasks/{taskId}/dependencies", contractTaskId.longValue())
+                        .header("Authorization", accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "precedingTaskId": %d
+                                }
+                                """.formatted(architectureTaskId.longValue())))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(patch("/api/tasks/{taskId}/status", architectureTaskId.longValue())
+                        .header("Authorization", accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "status": "DOING"
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/projects/1/meetings")
+                        .header("Authorization", accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "title": "Weekly Planning",
+                                  "meetingDate": "2026-04-29",
+                                  "agenda": "Plan report evidence",
+                                  "content": "Review test coverage and handoff status",
+                                  "decisions": ["Use Postman evidence", "Keep backend API stable"],
+                                  "attendeeIds": [%d],
+                                  "actionItems": [
+                                    {
+                                      "content": "Collect screenshots",
+                                      "assigneeId": %d,
+                                      "dueDate": "2026-04-30"
+                                    }
+                                  ]
+                                }
+                                """.formatted(assigneeId.longValue(), assigneeId.longValue())))
+                .andExpect(status().isOk());
+
+        MvcResult reportResult = mockMvc.perform(post("/api/projects/1/reports")
+                        .header("Authorization", accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "reportType": "PDF"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.downloadUrl").isString())
+                .andReturn();
+        String downloadUrl = JsonPath.read(reportResult.getResponse().getContentAsString(), "$.result.downloadUrl");
+
+        MvcResult downloadResult = mockMvc.perform(get(downloadUrl)
+                        .header("Authorization", accessToken))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PDF))
+                .andReturn();
+
+        byte[] pdf = downloadResult.getResponse().getContentAsByteArray();
+        PdfReader reader = new PdfReader(pdf);
+        var extractor = new PdfTextExtractor(reader);
+        var extractedText = new StringBuilder();
+        for (int page = 1; page <= reader.getNumberOfPages(); page++) {
+            extractedText.append(extractor.getTextFromPage(page));
+        }
+        reader.close();
+
+        assertThat(extractedText.toString())
+                .contains("Rich Report Project")
+                .contains("Architecture Review")
+                .contains("Frontend Contract")
+                .contains("Weekly Planning")
+                .contains("Decisions:")
+                .contains("Action items:")
+                .contains("Risk Signals");
     }
 
     private String issueAccessToken(String email) throws Exception {

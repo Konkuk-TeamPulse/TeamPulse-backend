@@ -74,11 +74,6 @@ public class ProjectTaskApiController {
                 task.dueDate()));
     }
 
-    // Deprecated: 프론트엔드는 프로젝트 ID 없는 태스크 수정 API PATCH /api/tasks/{taskId} 를 사용합니다.
-    // Deprecated: 프론트엔드는 프로젝트 ID 없는 태스크 삭제 API DELETE /api/tasks/{taskId} 를 사용합니다.
-    // Deprecated: 프론트엔드는 프로젝트 ID 없는 상태 변경 API PATCH /api/tasks/{taskId}/status 를 사용합니다.
-    // Deprecated: 프론트엔드는 프로젝트 ID 없는 의존성 추가 API POST /api/tasks/{taskId}/dependencies 를 사용합니다.
-    // Deprecated: 프론트엔드는 프로젝트 ID 없는 의존성 삭제 API DELETE /api/tasks/{taskId}/dependencies/{dependencyId} 를 사용합니다.
     private MemberView requireMemberById(WorkspaceState workspace, long memberId) {
         return workspace.members().stream()
                 .filter(member -> member.id() == memberId)

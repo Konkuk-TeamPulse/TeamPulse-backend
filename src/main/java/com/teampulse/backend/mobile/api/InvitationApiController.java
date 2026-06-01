@@ -12,6 +12,7 @@ import jakarta.validation.Valid;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -54,8 +55,7 @@ public class InvitationApiController {
     ) {
         var authUser = requireAuthUser(authentication);
         var memberName = defaultText(request == null ? null : request.name(), authUser.name());
-        var role = request == null || request.role() == null ? TeamRole.MEMBER : request.role();
-        var updatedWorkspace = mobileInvitationUseCase.acceptInvitation(token, memberName, authUser.email(), role);
+        var updatedWorkspace = mobileInvitationUseCase.acceptInvitation(token, memberName, authUser.email(), TeamRole.MEMBER);
         var member = updatedWorkspace.members().stream()
                 .filter(candidate -> candidate.email().equalsIgnoreCase(authUser.email()))
                 .findFirst()
@@ -76,7 +76,7 @@ public class InvitationApiController {
         if (authentication != null && authentication.getPrincipal() instanceof AuthUser authUser) {
             return authUser;
         }
-        throw new IllegalArgumentException("Authentication user is required.");
+        throw new AccessDeniedException("Authentication user is required.");
     }
 
     private String defaultText(String value, String fallback) {
