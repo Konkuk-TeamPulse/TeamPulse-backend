@@ -104,15 +104,12 @@ public class ProjectApiController {
         this.frontendPublicBaseUrl = normalizeBaseUrl(frontendPublicBaseUrl);
     }
 
-    // Deprecated: 프론트엔드는 현재 사용자 조회 API GET /api/users/me 를 사용합니다.
-    // Deprecated: 프론트엔드는 현재 계정 수정 API를 호출하지 않고 GET /api/users/me 로 사용자 정보를 조회합니다.
     @GetMapping("/users/me")
     public SpecResponse<UserMeResponse> getCurrentUser(Authentication authentication) {
         var workspace = workspaceQueryUseCase.getWorkspace();
         return SpecResponse.ok(SUCCESS_MESSAGE, userMe(workspace, authentication));
     }
 
-    // Deprecated: 프론트엔드는 프로젝트 활동 로그 API GET /api/projects/{projectId}/activity-logs 를 사용합니다.
     @PostMapping("/projects")
     public SpecResponse<ProjectCreateResponse> createProject(
             @Valid @RequestBody ProjectCreateRequest request,
@@ -177,7 +174,6 @@ public class ProjectApiController {
                 .toList());
     }
 
-    // Deprecated: 프론트엔드는 멤버 직접 추가 API를 호출하지 않고 초대 API POST /api/projects/{projectId}/invitations 를 사용합니다.
     @DeleteMapping("/projects/{projectId}/members/me")
     public SpecResponse<Void> leaveProject(@PathVariable long projectId, Authentication authentication) {
         var workspace = projectWorkspaceUseCase.getProjectWorkspace(projectId);
@@ -197,8 +193,6 @@ public class ProjectApiController {
         return SpecResponse.ok("\uD300\uC5D0\uC11C \uD0C8\uD1F4\uD588\uC2B5\uB2C8\uB2E4.", null);
     }
 
-    // Deprecated: 프론트엔드는 현재 사용자 탈퇴 API DELETE /api/projects/{projectId}/members/me 를 사용합니다.
-    // Deprecated: 프론트엔드는 초대 생성 API POST /api/projects/{projectId}/invitations 를 사용합니다.
     @PostMapping("/projects/{projectId}/invitations")
     public SpecResponse<InvitationCreateResponse> createInvitation(
             @PathVariable long projectId,
@@ -208,7 +202,6 @@ public class ProjectApiController {
         return SpecResponse.ok(SUCCESS_MESSAGE, invitationResponse(projectId, workspace.team()));
     }
 
-    // Deprecated: 프론트엔드는 활동 로그 API GET /api/projects/{projectId}/activity-logs 를 사용합니다.
     @GetMapping("/projects/{projectId}/activity-logs")
     public SpecResponse<List<ActivityLogSpecResponse>> listActivityLogs(@PathVariable long projectId) {
         return SpecResponse.ok(SUCCESS_MESSAGE, projectWorkspaceUseCase.getProjectWorkspace(projectId).activities().stream()
@@ -236,8 +229,6 @@ public class ProjectApiController {
         return SpecResponse.ok(REPORT_CREATED_MESSAGE, new ReportCreateResponse(report.id(), "/api/reports/" + report.id() + "/download"));
     }
 
-    // Deprecated: 프론트엔드는 리포트 생성 API POST /api/projects/{projectId}/reports 와 다운로드 API GET /api/reports/{reportId}/download 를 사용합니다.
-    // Deprecated: 프론트엔드는 프로젝트 ID 없는 다운로드 API GET /api/reports/{reportId}/download 를 사용합니다.
     @GetMapping("/reports/{reportId}/download")
     public void downloadReport(@PathVariable long reportId, HttpServletResponse response) throws IOException {
         writeReportDownloadResponse(projectWorkspaceUseCase.getProjectWorkspaceByReportId(reportId), reportId, response);

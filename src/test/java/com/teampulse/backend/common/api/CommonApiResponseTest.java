@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
 class CommonApiResponseTest {
 
@@ -50,5 +51,23 @@ class CommonApiResponseTest {
                     assertThat(response.responseMessage()).isEqualTo("fail");
                     assertThat(response.result()).isNull();
                 });
+    }
+
+    @Test
+    void healthControllerExposesRuntimeSummaryForFrontendShell() {
+        var controller = new HealthController();
+        ReflectionTestUtils.setField(controller, "storageMode", "mysql");
+
+        var response = controller.health();
+
+        assertThat(response.success()).isTrue();
+        assertThat(response.error()).isNull();
+        assertThat(response.data())
+                .containsEntry("status", "UP")
+                .containsEntry("service", "teampulse-backend")
+                .containsEntry("storageMode", "mysql")
+                .containsEntry("publicApi", true);
+        assertThat(response.data().get("deploymentTarget")).isInstanceOf(Map.class);
+        assertThat(response.data().get("enums")).isInstanceOf(Map.class);
     }
 }

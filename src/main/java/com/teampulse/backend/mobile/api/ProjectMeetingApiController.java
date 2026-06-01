@@ -54,7 +54,6 @@ public class ProjectMeetingApiController {
                 meeting.time()));
     }
 
-    // Deprecated: 프론트엔드는 회의 상세 조회 API GET /api/meetings/{meetingId} 를 사용합니다.
     private MeetingView latestMeeting(WorkspaceState workspace) {
         return workspace.meetings().stream()
                 .max(Comparator.comparingLong(MeetingView::id))
