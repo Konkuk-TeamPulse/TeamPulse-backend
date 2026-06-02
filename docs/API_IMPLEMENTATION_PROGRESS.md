@@ -135,7 +135,7 @@ Implemented behavior:
 - `GET /api/projects` returns `projectId`, `projectName`, `subject`, `role`, `endDate`.
 - `GET /api/projects/{projectId}` returns `projectId`, `projectName`, `subject`, `description`, `startDate`, `endDate`, `memberCount`.
 - `PATCH /api/projects/{projectId}` accepts the same Notion project fields and returns updated project fields plus `updatedAt`.
-- The current MVP still supports one demo project id: `1`.
+- Current project APIs use the project id returned from `POST /api/projects`; tests may still create demo data, but clients should not assume project id `1`.
 
 Main code:
 
@@ -189,15 +189,15 @@ Endpoints:
 ```text
 POST /api/projects/{projectId}/meetings
 GET  /api/projects/{projectId}/meetings
-GET  /api/projects/{projectId}/meetings/{meetingId}
+GET  /api/meetings/{meetingId}
 ```
 
 Implemented behavior:
 
 - `POST /api/projects/{projectId}/meetings` creates a meeting record from the existing meeting request fields.
 - `GET /api/projects/{projectId}/meetings` returns meeting summaries in the standard spec wrapper.
-- `GET /api/projects/{projectId}/meetings/{meetingId}` returns one meeting record.
-- Existing `/api/mobile/meetings` remains available for the old MVP frontend flow.
+- `GET /api/meetings/{meetingId}` returns one meeting record.
+- Legacy `/api/mobile/meetings` is no longer part of the current official API surface.
 
 Main code:
 
@@ -210,7 +210,7 @@ Scope:
 
 - Only the rows marked `in progress` in the Notion API table were aligned in this batch.
 - `GET /api/projects/{projectId}/risks` was not changed because the latest table marked risk signal lookup as `not started`.
-- Existing `/api/mobile/**` MVP endpoints were kept for frontend compatibility.
+- Legacy `/api/mobile/**` endpoints are no longer part of the current official API surface; current controllers expose `/api/projects`, `/api/tasks`, `/api/meetings`, and `/api/invitations` paths.
 
 Completed endpoints:
 
@@ -342,9 +342,8 @@ GET  /api/projects/1/meetings/{meetingId} -> action item assignee and due date r
 
 ## Remaining Auth Hardening
 
-The current auth implementation is complete enough for demo/MVP API behavior, but these items remain for production hardening:
+The current auth implementation supports the submitted API behavior. These items remain for additional production hardening:
 
 - Replace demo tokens with signed JWT access/refresh tokens.
-- Persist users and refresh tokens in database tables.
 - Add token expiration and refresh-token rotation.
 - Connect Spring Security authentication filters to issued JWTs.
