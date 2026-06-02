@@ -134,6 +134,39 @@ class AuthApiControllerTest {
     }
 
     @Test
+    void loginRateLimitBlocksRepeatedFailures() throws Exception {
+        mockMvc.perform(post("/api/auth/signup")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(signupBody("rate-limit@example.com", "!aaa123123")))
+                .andExpect(status().isOk());
+
+        for (int attempt = 0; attempt < 5; attempt++) {
+            mockMvc.perform(post("/api/auth/login")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {
+                                      "email": "rate-limit@example.com",
+                                      "password": "!wrong123123"
+                                    }
+                                    """))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(jsonPath("$.responseCode").value(2014));
+        }
+
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "email": "rate-limit@example.com",
+                                  "password": "!aaa123123"
+                                }
+                                """))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.isSuccess").value(false))
+                .andExpect(jsonPath("$.responseCode").value(2015));
+    }
+
+    @Test
     void loginRejectsInvalidFields() throws Exception {
         mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)

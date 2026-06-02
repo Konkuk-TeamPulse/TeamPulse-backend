@@ -16,16 +16,19 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final TokenIssuer tokenIssuer;
     private final RefreshTokenRegistry refreshTokenRegistry;
+    private final LoginAttemptGuard loginAttemptGuard;
 
     public AuthService(
             AuthUserRepository userRepository,
             PasswordEncoder passwordEncoder,
             TokenIssuer tokenIssuer,
-            RefreshTokenRegistry refreshTokenRegistry) {
+            RefreshTokenRegistry refreshTokenRegistry,
+            LoginAttemptGuard loginAttemptGuard) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.tokenIssuer = tokenIssuer;
         this.refreshTokenRegistry = refreshTokenRegistry;
+        this.loginAttemptGuard = loginAttemptGuard;
     }
 
     public SignupResponse signup(SignupRequest request) {
@@ -53,12 +56,19 @@ public class AuthService {
 
     public LoginResponse login(LoginRequest request) {
         var email = normalizeEmail(request.email());
-        var user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new AuthUserNotFoundException(email));
-        if (!passwordEncoder.matches(request.password(), user.passwordHash())) {
-            throw new InvalidPasswordException();
+        loginAttemptGuard.assertAllowed(email);
+        try {
+            var user = userRepository.findByEmail(email)
+                    .orElseThrow(() -> new AuthUserNotFoundException(email));
+            if (!passwordEncoder.matches(request.password(), user.passwordHash())) {
+                throw new InvalidPasswordException();
+            }
+            loginAttemptGuard.recordSuccess(email);
+            return new LoginResponse(user.id(), user.email(), tokenIssuer.issue(user));
+        } catch (AuthUserNotFoundException | InvalidPasswordException exception) {
+            loginAttemptGuard.recordFailure(email);
+            throw exception;
         }
-        return new LoginResponse(user.id(), user.email(), tokenIssuer.issue(user));
     }
 
     public void logout(LogoutRequest request) {

@@ -4,10 +4,12 @@ import com.teampulse.backend.auth.application.AuthUserNotFoundException;
 import com.teampulse.backend.auth.application.DuplicateEmailException;
 import com.teampulse.backend.auth.application.InvalidPasswordException;
 import com.teampulse.backend.auth.application.InvalidRefreshTokenException;
+import com.teampulse.backend.auth.application.TooManyLoginAttemptsException;
 import com.teampulse.backend.common.api.SpecResponse;
 import java.util.List;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -20,6 +22,7 @@ public class AuthExceptionHandler {
     private static final String DUPLICATE_EMAIL_MESSAGE = "\uC911\uBCF5\uB41C \uC774\uBA54\uC77C\uC785\uB2C8\uB2E4.";
     private static final String USER_NOT_FOUND_MESSAGE = "\uC874\uC7AC\uD558\uC9C0 \uC54A\uB294 \uD68C\uC6D0\uC785\uB2C8\uB2E4.";
     private static final String INVALID_PASSWORD_MESSAGE = "\uBE44\uBC00\uBC88\uD638\uAC00 \uC77C\uCE58\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.";
+    private static final String TOO_MANY_LOGIN_ATTEMPTS_MESSAGE = "\uB85C\uADF8\uC778 \uC2E4\uD328\uAC00 \uBC18\uBCF5\uB418\uC5B4 \uC7A0\uC2DC \uD6C4 \uB2E4\uC2DC \uC2DC\uB3C4\uD574\uC8FC\uC138\uC694.";
     private static final String VALIDATION_MESSAGE = "\uC694\uCCAD \uAC12\uC774 \uC798\uBABB\uB418\uC5C8\uC2B5\uB2C8\uB2E4.";
 
     @ExceptionHandler(DuplicateEmailException.class)
@@ -44,6 +47,12 @@ public class AuthExceptionHandler {
     public ResponseEntity<SpecResponse<Void>> handleInvalidRefreshToken(InvalidRefreshTokenException exception) {
         return ResponseEntity.status(401)
                 .body(SpecResponse.fail(2009, exception.getMessage(), null));
+    }
+
+    @ExceptionHandler(TooManyLoginAttemptsException.class)
+    public ResponseEntity<SpecResponse<Void>> handleTooManyLoginAttempts(TooManyLoginAttemptsException exception) {
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .body(SpecResponse.fail(2015, TOO_MANY_LOGIN_ATTEMPTS_MESSAGE, null));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
