@@ -696,6 +696,61 @@ class WorkspaceControllerTest {
     }
 
     @Test
+    void invitedMemberWithSameNameAsLeaderDoesNotReceiveLeaderPermissions() throws Exception {
+        String leaderToken = issueAccessToken("same-name-leader@example.com", "Shared Name");
+
+        mockMvc.perform(post("/api/projects")
+                        .header("Authorization", leaderToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "projectName": "Same Name Project",
+                                  "subject": "Authorization",
+                                  "description": "Same display name must not grant leader permission",
+                                  "startDate": "2026-04-01",
+                                  "endDate": "2026-06-09"
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        MvcResult invitationResult = mockMvc.perform(post("/api/projects/1/invitations")
+                        .header("Authorization", leaderToken))
+                .andExpect(status().isOk())
+                .andReturn();
+        String inviteCode = JsonPath.read(invitationResult.getResponse().getContentAsString(), "$.result.inviteCode");
+
+        String invitedToken = issueAccessToken("same-name-member@example.com", "Shared Name");
+        mockMvc.perform(post("/api/invitations/{inviteCode}/accept", inviteCode)
+                        .header("Authorization", invitedToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.role").value("MEMBER"));
+
+        mockMvc.perform(post("/api/projects/1/invitations")
+                        .header("Authorization", invitedToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.isSuccess").value(false))
+                .andExpect(jsonPath("$.responseCode").value(3003));
+
+        mockMvc.perform(patch("/api/projects/1")
+                        .header("Authorization", invitedToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "projectName": "Same Name Escalation",
+                                  "subject": "Forbidden",
+                                  "description": "Same display name must not update project",
+                                  "startDate": "2026-04-02",
+                                  "endDate": "2026-06-10"
+                                }
+                                """))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.isSuccess").value(false))
+                .andExpect(jsonPath("$.responseCode").value(3003));
+    }
+
+    @Test
     void invalidInvitationLookupIsRateLimited() throws Exception {
         var invalidCode = "missing-" + System.nanoTime();
 

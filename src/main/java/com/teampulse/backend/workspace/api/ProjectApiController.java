@@ -273,8 +273,9 @@ public class ProjectApiController {
     }
 
     private boolean sameMember(MemberView member, AuthUser authUser) {
-        return (!member.email().isBlank() && member.email().equalsIgnoreCase(authUser.email()))
-                || member.name().equalsIgnoreCase(authUser.name());
+        return !member.email().isBlank()
+                && !authUser.email().isBlank()
+                && member.email().equalsIgnoreCase(authUser.email());
     }
 
     private UserMeResponse userMe(AuthUser authUser) {

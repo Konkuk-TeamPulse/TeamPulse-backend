@@ -37,7 +37,7 @@ public class ProjectMemberApiController {
                 .filter(member -> member.id() == memberId)
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("Member not found."));
-        if (sameMember(target, authUser)) {
+        if (sameMember(target, authUser) || isProjectOwnerMember(workspace, target, authUser)) {
             throw new IllegalArgumentException("Project leaders cannot remove themselves.");
         }
         projectWorkspaceUseCase.deleteProjectMember(projectId, memberId);
@@ -71,7 +71,14 @@ public class ProjectMemberApiController {
     }
 
     private boolean sameMember(MemberView member, AuthUser authUser) {
-        return (!member.email().isBlank() && member.email().equalsIgnoreCase(authUser.email()))
-                || member.name().equalsIgnoreCase(authUser.name());
+        return !member.email().isBlank()
+                && !authUser.email().isBlank()
+                && member.email().equalsIgnoreCase(authUser.email());
+    }
+
+    private boolean isProjectOwnerMember(WorkspaceState workspace, MemberView member, AuthUser authUser) {
+        return isProjectOwner(workspace, authUser)
+                && member.role() == TeamRole.LEADER
+                && member.name().equalsIgnoreCase(workspace.user().name());
     }
 }
