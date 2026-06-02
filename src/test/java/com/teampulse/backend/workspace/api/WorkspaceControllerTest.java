@@ -258,6 +258,11 @@ class WorkspaceControllerTest {
                 .andExpect(jsonPath("$.isSuccess").value(true))
                 .andExpect(jsonPath("$.responseCode").value(1000))
                 .andExpect(jsonPath("$.result").doesNotExist());
+
+        mockMvc.perform(get("/api/projects")
+                        .header("Authorization", accessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.length()").value(0));
     }
 
     @Test
@@ -623,10 +628,24 @@ class WorkspaceControllerTest {
                 .andReturn();
         Number invitedMemberId = JsonPath.read(acceptResult.getResponse().getContentAsString(), "$.result.memberId");
 
-        mockMvc.perform(get("/api/projects/1/members")
+        MvcResult memberListResult = mockMvc.perform(get("/api/projects/1/members")
                         .header("Authorization", leaderToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.length()").value(2));
+                .andExpect(jsonPath("$.result.length()").value(2))
+                .andReturn();
+        Number leaderMemberId = JsonPath.read(memberListResult.getResponse().getContentAsString(), "$.result[0].memberId");
+
+        mockMvc.perform(delete("/api/projects/1/members/me")
+                        .header("Authorization", leaderToken))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.isSuccess").value(false))
+                .andExpect(jsonPath("$.responseMessage").value("Project leader cannot leave before all other members leave."));
+
+        mockMvc.perform(delete("/api/projects/1/members/{memberId}", leaderMemberId.longValue())
+                        .header("Authorization", leaderToken))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.isSuccess").value(false))
+                .andExpect(jsonPath("$.responseMessage").value("Project leaders cannot remove themselves."));
 
         mockMvc.perform(post("/api/projects/1/invitations")
                         .header("Authorization", accessToken))

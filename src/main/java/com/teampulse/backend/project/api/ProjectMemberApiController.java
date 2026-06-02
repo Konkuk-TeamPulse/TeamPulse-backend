@@ -32,15 +32,22 @@ public class ProjectMemberApiController {
             Authentication authentication
     ) {
         var workspace = projectWorkspaceUseCase.getProjectWorkspace(projectId);
-        requireProjectLeader(workspace, authentication);
+        var authUser = requireProjectLeader(workspace, authentication);
+        var target = workspace.members().stream()
+                .filter(member -> member.id() == memberId)
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Member not found."));
+        if (sameMember(target, authUser)) {
+            throw new IllegalArgumentException("Project leaders cannot remove themselves.");
+        }
         projectWorkspaceUseCase.deleteProjectMember(projectId, memberId);
         return SpecResponse.ok(MEMBER_REMOVED_MESSAGE, null);
     }
 
-    private void requireProjectLeader(WorkspaceState workspace, Authentication authentication) {
+    private AuthUser requireProjectLeader(WorkspaceState workspace, Authentication authentication) {
         var authUser = requireAuthUser(authentication);
         if (isProjectOwner(workspace, authUser) || hasLeaderMembership(workspace, authUser)) {
-            return;
+            return authUser;
         }
         throw new AccessDeniedException("Only project leaders can remove team members.");
     }
