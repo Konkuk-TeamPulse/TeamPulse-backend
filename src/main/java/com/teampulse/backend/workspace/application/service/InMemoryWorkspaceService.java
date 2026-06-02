@@ -551,6 +551,11 @@ public class InMemoryWorkspaceService implements WorkspaceService {
         if (openTasks) {
             throw new IllegalArgumentException("Reassign open tasks before removing this member.");
         }
+        if (target.role() == TeamRole.LEADER && workspace.members().stream()
+                .filter(member -> member.role() == TeamRole.LEADER)
+                .count() == 1) {
+            throw new IllegalArgumentException("Project must keep a leader while members remain.");
+        }
 
         var members = new ArrayList<>(workspace.members());
         members.removeIf(member -> member.id() == memberId);

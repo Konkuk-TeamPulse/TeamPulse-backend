@@ -549,6 +549,11 @@ public class JpaWorkspaceService implements WorkspaceService {
         if (openTasks) {
             throw new IllegalArgumentException("Reassign open tasks before removing this member.");
         }
+        if (target.getRole() == TeamRole.LEADER && workspace.getMembers().stream()
+                .filter(member -> member.getRole() == TeamRole.LEADER)
+                .count() == 1) {
+            throw new IllegalArgumentException("Project must keep a leader while members remain.");
+        }
 
         workspace.getMembers().remove(target);
         workspace.getActivities().add(activity(workspace, workspace.getUserName(), targetName + " removed from team."));

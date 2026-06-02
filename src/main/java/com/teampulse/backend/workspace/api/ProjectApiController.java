@@ -162,6 +162,9 @@ public class ProjectApiController {
                         .filter(member -> member.name().equalsIgnoreCase(currentUser.name()))
                         .findFirst())
                 .orElseThrow(() -> new IllegalArgumentException("Current user is not a team member."));
+        if (target.role() == TeamRole.LEADER && workspace.members().size() > 1) {
+            throw new IllegalArgumentException("Project leader cannot leave before all other members leave.");
+        }
         if (workspace.members().size() == 1) {
             projectWorkspaceUseCase.resetProjectWorkspace(projectId);
         } else {
