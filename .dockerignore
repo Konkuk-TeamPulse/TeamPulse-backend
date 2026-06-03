@@ -3,3 +3,6 @@
 .git
 .gitignore
 HELP.md
+.env
+.env.*
+!.env.example
