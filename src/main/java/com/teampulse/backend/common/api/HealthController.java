@@ -26,7 +26,7 @@ public class HealthController {
                 "publicApi", true,
                 "deploymentTarget", Map.of(
                         "frontend", "Vercel Production",
-                        "backend", "AWS Elastic Beanstalk",
+                        "backend", "AWS EC2",
                         "database", "AWS RDS MySQL"
                 ),
                 "enums", Map.of(
