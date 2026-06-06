@@ -68,6 +68,9 @@ class CommonApiResponseTest {
                 .containsEntry("storageMode", "mysql")
                 .containsEntry("publicApi", true);
         assertThat(response.data().get("deploymentTarget")).isInstanceOf(Map.class);
+        @SuppressWarnings("unchecked")
+        var deploymentTarget = (Map<String, Object>) response.data().get("deploymentTarget");
+        assertThat(deploymentTarget).containsEntry("backend", "AWS EC2");
         assertThat(response.data().get("enums")).isInstanceOf(Map.class);
     }
 }
