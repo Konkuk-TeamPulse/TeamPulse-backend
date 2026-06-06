@@ -234,13 +234,15 @@ class JpaWorkspaceServiceTest {
                 " Owner ",
                 "2026-06-05",
                 Arrays.asList("  Design ", "", null),
-                "  note "
+                "  note ",
+                11L
         ));
 
         assertThat(state.tasks()).singleElement()
                 .satisfies(task -> {
                     assertThat(task.title()).isEqualTo("Build API");
                     assertThat(task.owner()).isEqualTo("Owner");
+                    assertThat(task.assigneeId()).isEqualTo(11L);
                     assertThat(task.status()).isEqualTo(TaskStatus.TODO);
                     assertThat(task.dueDate()).isEqualTo("2026-06-05");
                     assertThat(task.priority()).isEqualTo("HIGH");

@@ -413,7 +413,11 @@ class WorkspaceControllerTest {
                 .andExpect(jsonPath("$.isSuccess").value(true))
                 .andExpect(jsonPath("$.responseCode").value(1000))
                 .andExpect(jsonPath("$.result[?(@.taskId == %d)].title".formatted(taskId.longValue())).value(hasItem("Write API spec")))
+                .andExpect(jsonPath("$.result[?(@.taskId == %d)].assigneeId".formatted(taskId.longValue()))
+                        .value(hasItem(assigneeId.intValue())))
                 .andExpect(jsonPath("$.result[?(@.taskId == %d)].assigneeName".formatted(taskId.longValue())).value(hasItem("Task Owner")))
+                .andExpect(jsonPath("$.result[?(@.taskId == %d)].assigneeEmail".formatted(taskId.longValue()))
+                        .value(hasItem("task-owner@example.com")))
                 .andExpect(jsonPath("$.result[?(@.taskId == %d)].dueDate".formatted(taskId.longValue())).value(hasItem("2026-04-28")));
 
         mockMvc.perform(patch("/api/tasks/{taskId}", taskId.longValue())

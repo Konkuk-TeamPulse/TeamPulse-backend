@@ -40,14 +40,19 @@ public class ProjectTaskApiController {
         var taskIdsByTitle = workspace.tasks().stream()
                 .collect(Collectors.groupingBy(TaskView::title, Collectors.mapping(TaskView::id, Collectors.toList())));
         var tasks = workspace.tasks().stream()
-                .map(task -> new TaskSummarySpecResponse(
-                        task.id(),
-                        task.title(),
-                        task.status(),
-                        task.owner(),
-                        task.dueDate(),
-                        precedingTaskIds(task, taskIdsByTitle),
-                        blockedTaskIds(task, workspace.tasks())))
+                .map(task -> {
+                    var assignee = findAssignee(workspace, task);
+                    return new TaskSummarySpecResponse(
+                            task.id(),
+                            task.title(),
+                            task.status(),
+                            assignee == null ? null : assignee.id(),
+                            task.owner(),
+                            assignee == null ? null : assignee.email(),
+                            task.dueDate(),
+                            precedingTaskIds(task, taskIdsByTitle),
+                            blockedTaskIds(task, workspace.tasks()));
+                })
                 .toList();
         return SpecResponse.ok(SUCCESS_MESSAGE, tasks);
     }
@@ -64,7 +69,8 @@ public class ProjectTaskApiController {
                 assignee.name(),
                 request.dueDate(),
                 List.of(),
-                normalizeNullable(request.description())));
+                normalizeNullable(request.description()),
+                assignee.id()));
         var task = latestTask(updated);
         return SpecResponse.ok(TASK_CREATED_MESSAGE, new TaskCreateSpecResponse(
                 task.id(),
@@ -79,6 +85,23 @@ public class ProjectTaskApiController {
                 .filter(member -> member.id() == memberId)
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("Assignee not found."));
+    }
+
+    private MemberView findMemberByName(WorkspaceState workspace, String name) {
+        return workspace.members().stream()
+                .filter(member -> member.name().equals(name))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private MemberView findAssignee(WorkspaceState workspace, TaskView task) {
+        if (task.assigneeId() != null) {
+            return workspace.members().stream()
+                    .filter(member -> member.id() == task.assigneeId())
+                    .findFirst()
+                    .orElse(null);
+        }
+        return findMemberByName(workspace, task.owner());
     }
 
     private TaskView latestTask(WorkspaceState workspace) {
