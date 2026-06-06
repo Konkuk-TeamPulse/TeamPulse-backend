@@ -40,14 +40,19 @@ public class ProjectTaskApiController {
         var taskIdsByTitle = workspace.tasks().stream()
                 .collect(Collectors.groupingBy(TaskView::title, Collectors.mapping(TaskView::id, Collectors.toList())));
         var tasks = workspace.tasks().stream()
-                .map(task -> new TaskSummarySpecResponse(
-                        task.id(),
-                        task.title(),
-                        task.status(),
-                        task.owner(),
-                        task.dueDate(),
-                        precedingTaskIds(task, taskIdsByTitle),
-                        blockedTaskIds(task, workspace.tasks())))
+                .map(task -> {
+                    var assignee = findAssignee(workspace, task);
+                    return new TaskSummarySpecResponse(
+                            task.id(),
+                            task.title(),
+                            task.status(),
+                            assignee == null ? task.assigneeId() : assignee.id(),
+                            task.owner(),
+                            assignee == null ? null : assignee.email(),
+                            task.dueDate(),
+                            precedingTaskIds(task, taskIdsByTitle),
+                            blockedTaskIds(task, workspace.tasks()));
+                })
                 .toList();
         return SpecResponse.ok(SUCCESS_MESSAGE, tasks);
     }
@@ -59,12 +64,14 @@ public class ProjectTaskApiController {
     ) {
         var workspace = projectWorkspaceUseCase.getProjectWorkspace(projectId);
         var assignee = requireMemberById(workspace, request.assigneeId());
+        requireMatchingEmail(assignee, request.assigneeEmail());
         var updated = projectWorkspaceUseCase.createProjectTask(projectId, new CreateTaskRequest(
                 request.title(),
                 assignee.name(),
                 request.dueDate(),
                 List.of(),
-                normalizeNullable(request.description())));
+                normalizeNullable(request.description()),
+                assignee.id()));
         var task = latestTask(updated);
         return SpecResponse.ok(TASK_CREATED_MESSAGE, new TaskCreateSpecResponse(
                 task.id(),
@@ -79,6 +86,25 @@ public class ProjectTaskApiController {
                 .filter(member -> member.id() == memberId)
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("Assignee not found."));
+    }
+
+    private void requireMatchingEmail(MemberView assignee, String email) {
+        if (!assignee.email().equalsIgnoreCase(email.trim())) {
+            throw new IllegalArgumentException("Assignee id and email do not match.");
+        }
+    }
+
+    private MemberView findAssignee(WorkspaceState workspace, TaskView task) {
+        if (task.assigneeId() != null) {
+            return workspace.members().stream()
+                    .filter(member -> member.id() == task.assigneeId())
+                    .findFirst()
+                    .orElse(null);
+        }
+        return workspace.members().stream()
+                .filter(member -> member.name().equalsIgnoreCase(task.owner()))
+                .findFirst()
+                .orElse(null);
     }
 
     private TaskView latestTask(WorkspaceState workspace) {

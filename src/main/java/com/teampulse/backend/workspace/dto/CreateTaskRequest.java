@@ -15,9 +15,14 @@ public record CreateTaskRequest(
         @Pattern(regexp = "\\d{4}-\\d{2}-\\d{2}", message = "Task due date must use yyyy-MM-dd.")
         String dueDate,
         List<String> blockers,
-        String note
+        String note,
+        Long assigneeId
 ) {
     public CreateTaskRequest(String title, String owner, String dueDate, List<String> blockers) {
-        this(title, owner, dueDate, blockers, "");
+        this(title, owner, dueDate, blockers, "", null);
+    }
+
+    public CreateTaskRequest(String title, String owner, String dueDate, List<String> blockers, String note) {
+        this(title, owner, dueDate, blockers, note, null);
     }
 }

@@ -1,5 +1,6 @@
 package com.teampulse.backend.workspace.dto;
 
+import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
@@ -15,6 +16,10 @@ public record TaskCreateSpecRequest(
 
         @NotNull(message = "Assignee id is required.")
         Long assigneeId,
+
+        @NotBlank(message = "Assignee email is required.")
+        @Email(message = "Assignee email must be valid.")
+        String assigneeEmail,
 
         @NotBlank(message = "Task due date is required.")
         @Pattern(regexp = "\\d{4}-\\d{2}-\\d{2}", message = "Task due date must use yyyy-MM-dd.")

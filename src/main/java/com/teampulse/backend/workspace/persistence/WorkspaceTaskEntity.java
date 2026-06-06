@@ -40,6 +40,9 @@ public class WorkspaceTaskEntity {
     @Column(nullable = false, length = 50)
     private String owner;
 
+    @Column(name = "assignee_id")
+    private Long assigneeId;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private TaskStatus status;

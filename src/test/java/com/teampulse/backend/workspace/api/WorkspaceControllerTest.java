@@ -72,9 +72,26 @@ class WorkspaceControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
+                                  "title": "Mismatched assignee task",
+                                  "description": "Should fail when id and email differ",
+                                  "assigneeId": %d,
+                                  "assigneeEmail": "other@example.com",
+                                  "dueDate": "2026-04-28"
+                                }
+                                """.formatted(assigneeId.longValue())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.isSuccess").value(false))
+                .andExpect(jsonPath("$.responseCode").value(2020));
+
+        mockMvc.perform(post("/api/projects/1/tasks")
+                        .header("Authorization", accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
                                   "title": "Overdue risk task",
                                   "description": "Creates a risk signal",
                                   "assigneeId": %d,
+                                  "assigneeEmail": "account-activities@example.com",
                                   "dueDate": "2026-04-01"
                                 }
                                 """.formatted(assigneeId.longValue())))
@@ -298,6 +315,7 @@ class WorkspaceControllerTest {
                                   "title": "Invalid assignee task",
                                   "description": "Should fail with typed error",
                                   "assigneeId": 999999,
+                                  "assigneeEmail": "task-owner@example.com",
                                   "dueDate": "2026-04-28"
                                 }
                                 """))
@@ -314,6 +332,7 @@ class WorkspaceControllerTest {
                                   "title": "Write API spec",
                                   "description": "Draft task API spec",
                                   "assigneeId": %d,
+                                  "assigneeEmail": "task-owner@example.com",
                                   "dueDate": "2026-04-28"
                                 }
                                 """.formatted(assigneeId.longValue())))
@@ -335,6 +354,7 @@ class WorkspaceControllerTest {
                                   "title": "Prepare API data",
                                   "description": "Prepare task dependency source",
                                   "assigneeId": %d,
+                                  "assigneeEmail": "task-owner@example.com",
                                   "dueDate": "2026-04-27"
                                 }
                                 """.formatted(assigneeId.longValue())))
@@ -413,7 +433,11 @@ class WorkspaceControllerTest {
                 .andExpect(jsonPath("$.isSuccess").value(true))
                 .andExpect(jsonPath("$.responseCode").value(1000))
                 .andExpect(jsonPath("$.result[?(@.taskId == %d)].title".formatted(taskId.longValue())).value(hasItem("Write API spec")))
+                .andExpect(jsonPath("$.result[?(@.taskId == %d)].assigneeId".formatted(taskId.longValue()))
+                        .value(hasItem(assigneeId.intValue())))
                 .andExpect(jsonPath("$.result[?(@.taskId == %d)].assigneeName".formatted(taskId.longValue())).value(hasItem("Task Owner")))
+                .andExpect(jsonPath("$.result[?(@.taskId == %d)].assigneeEmail".formatted(taskId.longValue()))
+                        .value(hasItem("task-owner@example.com")))
                 .andExpect(jsonPath("$.result[?(@.taskId == %d)].dueDate".formatted(taskId.longValue())).value(hasItem("2026-04-28")));
 
         mockMvc.perform(patch("/api/tasks/{taskId}", taskId.longValue())
@@ -902,6 +926,7 @@ class WorkspaceControllerTest {
                                   "title": "Architecture Review",
                                   "description": "Capture the design decision",
                                   "assigneeId": %d,
+                                  "assigneeEmail": "rich-report@example.com",
                                   "dueDate": "2026-04-20"
                                 }
                                 """.formatted(assigneeId.longValue())))
@@ -917,6 +942,7 @@ class WorkspaceControllerTest {
                                   "title": "Frontend Contract",
                                   "description": "Align API response fields",
                                   "assigneeId": %d,
+                                  "assigneeEmail": "rich-report@example.com",
                                   "dueDate": "2026-04-21"
                                 }
                                 """.formatted(assigneeId.longValue())))

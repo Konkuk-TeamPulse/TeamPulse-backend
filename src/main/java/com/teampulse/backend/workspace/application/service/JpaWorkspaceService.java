@@ -224,16 +224,24 @@ public class JpaWorkspaceService implements WorkspaceService {
         requireText(request.owner(), "Task owner is required.");
         requireText(request.dueDate(), "Task due date is required.");
         validateLocalDate(request.dueDate(), "Task due date must use a real yyyy-MM-dd date.");
-        requireExistingMember(workspace, request.owner(), "Task owner must be an existing team member.");
+        var assignee = request.assigneeId() == null
+                ? null
+                : requireExistingMember(workspace, request.assigneeId(), "Task owner must be an existing team member.");
+        var owner = assignee == null ? request.owner().trim() : assignee.getName();
+        if (assignee == null) {
+            requireExistingMember(workspace, owner, "Task owner must be an existing team member.");
+        }
 
-        workspace.getTasks().add(task(
+        var task = task(
                 workspace,
                 request.title().trim(),
-                request.owner().trim(),
+                owner,
                 request.dueDate().trim(),
                 safeList(request.blockers()),
                 TaskStatus.TODO,
-                defaultText(request.note(), "Created in assignment2 workspace flow.")));
+                defaultText(request.note(), "Created in assignment2 workspace flow."));
+        task.setAssigneeId(request.assigneeId());
+        workspace.getTasks().add(task);
         workspace.getActivities().add(activity(workspace, workspace.getUserName(), request.title().trim() + " created."));
         return persistAndProject(workspace);
     }
@@ -254,7 +262,14 @@ public class JpaWorkspaceService implements WorkspaceService {
         if (request.title() != null && !request.title().isBlank()) {
             target.setTitle(request.title().trim());
         }
-        if (request.owner() != null && !request.owner().isBlank()) {
+        if (request.assigneeId() != null) {
+            var assignee = requireExistingMember(
+                    workspace,
+                    request.assigneeId(),
+                    "Task owner must be an existing team member.");
+            target.setOwner(assignee.getName());
+            target.setAssigneeId(assignee.getId());
+        } else if (request.owner() != null && !request.owner().isBlank()) {
             requireExistingMember(workspace, request.owner(), "Task owner must be an existing team member.");
             target.setOwner(request.owner().trim());
         }
@@ -786,7 +801,8 @@ public class JpaWorkspaceService implements WorkspaceService {
                         task.getPriority(),
                         safeList(task.getBlockers()),
                         safeList(task.getNext()),
-                        task.getNote()))
+                        task.getNote(),
+                        task.getAssigneeId()))
                 .sorted(Comparator.comparing(TaskView::status).thenComparing(TaskView::dueDate))
                 .toList();
     }
@@ -1021,6 +1037,13 @@ public class JpaWorkspaceService implements WorkspaceService {
         if (!exists) {
             throw new IllegalArgumentException(message);
         }
+    }
+
+    private WorkspaceMemberEntity requireExistingMember(WorkspaceEntity workspace, long memberId, String message) {
+        return workspace.getMembers().stream()
+                .filter(member -> member.getId() == memberId)
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException(message));
     }
 
     private void validateLocalDate(String value, String message) {
