@@ -64,7 +64,8 @@ class InMemoryWorkspaceServiceTest {
                 "Second Owner",
                 "2026-06-11",
                 List.of(),
-                ""));
+                "",
+                second.members().get(0).id()));
 
         assertThat(service.getProjectWorkspaces())
                 .extracting(WorkspaceState::projectId)
@@ -73,8 +74,11 @@ class InMemoryWorkspaceServiceTest {
         assertThat(service.getProjectWorkspace(first.projectId()).tasks()).isEmpty();
         assertThat(service.getProjectWorkspace(second.projectId()).team().name()).isEqualTo("Second Project");
         assertThat(service.getProjectWorkspace(second.projectId()).tasks())
-                .extracting(TaskView::title)
-                .containsExactly("Second Project Task");
+                .singleElement()
+                .satisfies(task -> {
+                    assertThat(task.title()).isEqualTo("Second Project Task");
+                    assertThat(task.assigneeId()).isEqualTo(second.members().get(0).id());
+                });
     }
 
     @Test

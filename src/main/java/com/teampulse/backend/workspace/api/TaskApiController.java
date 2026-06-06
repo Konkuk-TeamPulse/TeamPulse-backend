@@ -54,7 +54,8 @@ public class TaskApiController {
                 null,
                 null,
                 null,
-                request.description()));
+                request.description(),
+                request.assigneeId()));
         var task = requireTaskById(updated, taskId);
         return SpecResponse.ok(TASK_UPDATED_MESSAGE, new TaskUpdateSpecResponse(
                 task.id(),

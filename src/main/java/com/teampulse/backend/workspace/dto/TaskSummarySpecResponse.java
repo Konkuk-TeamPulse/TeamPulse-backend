@@ -7,7 +7,9 @@ public record TaskSummarySpecResponse(
         long taskId,
         String title,
         TaskStatus status,
+        Long assigneeId,
         String assigneeName,
+        String assigneeEmail,
         String dueDate,
         List<Long> precedingTaskIds,
         List<Long> blockedTaskIds

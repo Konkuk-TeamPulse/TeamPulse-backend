@@ -12,6 +12,20 @@ public record TaskView(
         String priority,
         List<String> blockers,
         List<String> next,
-        String note
+        String note,
+        Long assigneeId
 ) {
+    public TaskView(
+            long id,
+            String title,
+            String owner,
+            TaskStatus status,
+            String dueDate,
+            String priority,
+            List<String> blockers,
+            List<String> next,
+            String note
+    ) {
+        this(id, title, owner, status, dueDate, priority, blockers, next, note, null);
+    }
 }

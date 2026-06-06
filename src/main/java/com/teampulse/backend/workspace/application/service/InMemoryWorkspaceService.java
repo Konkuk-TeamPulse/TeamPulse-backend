@@ -112,7 +112,7 @@ public class InMemoryWorkspaceService implements WorkspaceService {
         validateLocalDate(request.dueDate(), "Due date must use a real yyyy-MM-dd date.");
         validateOptionalLocalDate(request.startDate(), "Start date must use a real yyyy-MM-dd date.");
 
-        var leader = new MemberView(nextId(), request.name().trim(), TeamRole.LEADER);
+        var leader = new MemberView(nextId(), request.name().trim(), request.email().trim(), TeamRole.LEADER);
         var members = new ArrayList<>(List.of(leader));
         var activities = new ArrayList<>(List.of(activity(request.name().trim(), request.teamName().trim() + " workspace started.")));
 
@@ -180,16 +180,23 @@ public class InMemoryWorkspaceService implements WorkspaceService {
         requireText(request.owner(), "Task owner is required.");
         requireText(request.dueDate(), "Task due date is required.");
         validateLocalDate(request.dueDate(), "Task due date must use a real yyyy-MM-dd date.");
-        requireExistingMember(request.owner(), "Task owner must be an existing team member.");
+        var assignee = request.assigneeId() == null
+                ? null
+                : requireExistingMember(request.assigneeId(), "Task owner must be an existing team member.");
+        var owner = assignee == null ? request.owner().trim() : assignee.name();
+        if (assignee == null) {
+            requireExistingMember(owner, "Task owner must be an existing team member.");
+        }
 
         var tasks = new ArrayList<>(workspace.tasks());
         tasks.add(0, task(
                 request.title().trim(),
-                request.owner().trim(),
+                owner,
                 request.dueDate().trim(),
                 safeList(request.blockers()),
                 TaskStatus.TODO,
-                defaultText(request.note(), "Created in assignment2 workspace flow.")));
+                defaultText(request.note(), "Created in assignment2 workspace flow."),
+                request.assigneeId()));
 
         var activities = prependActivity(workspace.activities(), activity(workspace.user().name(), request.title().trim() + " created."));
         workspace = copy(workspace, tasks, workspace.meetings(), activities, workspace.reports(), workspace.members(), workspace.team());
@@ -203,8 +210,13 @@ public class InMemoryWorkspaceService implements WorkspaceService {
         TaskView target = null;
         for (var task : workspace.tasks()) {
             if (task.id() == taskId) {
-                var owner = defaultText(request.owner(), task.owner());
-                requireExistingMember(owner, "Task owner must be an existing team member.");
+                var assignee = request.assigneeId() == null
+                        ? null
+                        : requireExistingMember(request.assigneeId(), "Task owner must be an existing team member.");
+                var owner = assignee == null ? defaultText(request.owner(), task.owner()) : assignee.name();
+                if (assignee == null) {
+                    requireExistingMember(owner, "Task owner must be an existing team member.");
+                }
                 var dueDate = defaultText(request.dueDate(), task.dueDate());
                 validateLocalDate(dueDate, "Task due date must use a real yyyy-MM-dd date.");
 
@@ -217,7 +229,8 @@ public class InMemoryWorkspaceService implements WorkspaceService {
                         defaultText(request.priority(), task.priority()),
                         request.blockers() == null ? task.blockers() : safeList(request.blockers()),
                         request.next() == null ? task.next() : safeList(request.next()),
-                        defaultText(request.note(), task.note()));
+                        defaultText(request.note(), task.note()),
+                        request.assigneeId() == null ? task.assigneeId() : request.assigneeId());
                 tasks.add(target);
             } else {
                 tasks.add(task);
@@ -243,7 +256,7 @@ public class InMemoryWorkspaceService implements WorkspaceService {
         TaskView target = null;
         for (var task : workspace.tasks()) {
             if (task.id() == taskId) {
-                target = new TaskView(task.id(), task.title(), task.owner(), request.status(), task.dueDate(), task.priority(), task.blockers(), task.next(), task.note());
+                target = new TaskView(task.id(), task.title(), task.owner(), request.status(), task.dueDate(), task.priority(), task.blockers(), task.next(), task.note(), task.assigneeId());
                 tasks.add(target);
             } else {
                 tasks.add(task);
@@ -289,7 +302,7 @@ public class InMemoryWorkspaceService implements WorkspaceService {
                 if (!blockers.contains(dependency)) {
                     blockers.add(dependency);
                 }
-                target = new TaskView(task.id(), task.title(), task.owner(), task.status(), task.dueDate(), task.priority(), blockers, task.next(), task.note());
+                target = new TaskView(task.id(), task.title(), task.owner(), task.status(), task.dueDate(), task.priority(), blockers, task.next(), task.note(), task.assigneeId());
                 tasks.add(target);
             } else {
                 tasks.add(task);
@@ -312,7 +325,7 @@ public class InMemoryWorkspaceService implements WorkspaceService {
             if (task.id() == taskId) {
                 var blockers = new ArrayList<>(task.blockers());
                 blockers.removeIf(blocker -> blocker.equalsIgnoreCase(dependencyTitle.trim()));
-                target = new TaskView(task.id(), task.title(), task.owner(), task.status(), task.dueDate(), task.priority(), blockers, task.next(), task.note());
+                target = new TaskView(task.id(), task.title(), task.owner(), task.status(), task.dueDate(), task.priority(), blockers, task.next(), task.note(), task.assigneeId());
                 tasks.add(target);
             } else {
                 tasks.add(task);
@@ -646,6 +659,18 @@ public class InMemoryWorkspaceService implements WorkspaceService {
     }
 
     private TaskView task(String title, String owner, String dueDate, List<String> blockers, TaskStatus status, String note) {
+        return task(title, owner, dueDate, blockers, status, note, null);
+    }
+
+    private TaskView task(
+            String title,
+            String owner,
+            String dueDate,
+            List<String> blockers,
+            TaskStatus status,
+            String note,
+            Long assigneeId
+    ) {
         return new TaskView(
                 nextId(),
                 title,
@@ -655,7 +680,8 @@ public class InMemoryWorkspaceService implements WorkspaceService {
                 blockers.isEmpty() ? "MEDIUM" : "HIGH",
                 List.copyOf(blockers),
                 List.of(),
-                note);
+                note,
+                assigneeId);
     }
 
     private ActivityView activity(String actor, String summary) {
@@ -722,6 +748,13 @@ public class InMemoryWorkspaceService implements WorkspaceService {
         if (!exists) {
             throw new IllegalArgumentException(message);
         }
+    }
+
+    private MemberView requireExistingMember(long memberId, String message) {
+        return workspace.members().stream()
+                .filter(member -> member.id() == memberId)
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException(message));
     }
 
     private void requireValidInviteCode(String inviteCode) {
